@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+
+# ローカル実行時のデータ（既定は ~/.teachmate だが、リポジトリ内に置いた場合の保険）
+.teachmate/

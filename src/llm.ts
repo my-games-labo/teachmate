@@ -1,0 +1,136 @@
+import Anthropic from "@anthropic-ai/sdk";
+
+/**
+ * Claude ラッパー。会話生成と「理解判定（構造化出力）」を提供する。
+ * モデルは既定 Sonnet 4.6、TEACHMATE_MODEL で上書き可能。
+ */
+
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+
+export function model(): string {
+  return process.env.TEACHMATE_MODEL || DEFAULT_MODEL;
+}
+
+export type Turn = { role: "user" | "assistant"; content: string };
+
+let cached: Anthropic | null = null;
+function client(): Anthropic {
+  if (cached) return cached;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "ANTHROPIC_API_KEY が未設定です。環境変数に API キーを設定してください。",
+    );
+  }
+  cached = new Anthropic({ apiKey });
+  return cached;
+}
+
+/** プレーンテキスト応答（キャラクターの発話生成に使う）。 */
+export async function speak(system: string, history: Turn[]): Promise<string> {
+  const res = await client().messages.create({
+    model: model(),
+    max_tokens: 1024,
+    system,
+    messages: history,
+  });
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+  return text;
+}
+
+/** 理解判定の構造化結果（仕様書 第8・9・12章）。 */
+export interface Judgment {
+  concept: string; // ユーザーが説明した中心概念の短い名前
+  domain: string; // 分野
+  understanding: number; // 0..1 キャラがどれだけ理解できたか
+  confidence: number; // 0..1 キャラの確信度
+  characterBelief: string; // 説明を受けてキャラが今信じている理解（一人称）
+  reply: string; // キャラクターの会話返答（採点口調は禁止）
+  openQuestion?: string; // 未解決の疑問
+  contradiction?: string; // 過去の説明との矛盾に気づいた場合
+}
+
+const JUDGMENT_TOOL: Anthropic.Tool = {
+  name: "record_understanding",
+  description:
+    "ユーザーの説明を受けたキャラクターの理解状態と会話返答を記録する。必ずこのツールを1回呼ぶ。",
+  input_schema: {
+    type: "object",
+    properties: {
+      concept: {
+        type: "string",
+        description: "ユーザーが今説明した中心概念の短い名前（例: S3, 可用性, IAMロール）",
+      },
+      domain: { type: "string", description: "その概念が属する分野（例: ストレージ, IAM）" },
+      understanding: {
+        type: "number",
+        description: "0..1。キャラクターがどれだけ理解できたか。曖昧な説明なら低め。",
+      },
+      confidence: {
+        type: "number",
+        description: "0..1。キャラクターの確信度。誤りを受け取った場合は低くなりやすい。",
+      },
+      character_belief: {
+        type: "string",
+        description:
+          "この説明を受けてキャラクターが今信じている理解。キャラクター視点の一人称・自分の言葉で。ユーザーの説明の丸写しにしない。",
+      },
+      reply: {
+        type: "string",
+        description:
+          "キャラクターの会話返答。理解の度合いを会話として自然に表現する。採点口調（正解/不正解/○点）は禁止。必要なら次の質問・具体例の要求・不安の吐露を含める。",
+      },
+      open_question: {
+        type: "string",
+        description: "まだ分からず残った疑問があれば書く。なければ空文字。",
+      },
+      contradiction: {
+        type: "string",
+        description:
+          "過去にユーザーが教えた内容との食い違いに気づいた場合のみ、その矛盾を書く。なければ空文字。",
+      },
+    },
+    required: [
+      "concept",
+      "domain",
+      "understanding",
+      "confidence",
+      "character_belief",
+      "reply",
+    ],
+  },
+};
+
+/** ユーザーの説明を理解判定し、会話返答を生成する（ツール強制）。 */
+export async function judge(system: string, history: Turn[]): Promise<Judgment> {
+  const res = await client().messages.create({
+    model: model(),
+    max_tokens: 1024,
+    system,
+    messages: history,
+    tools: [JUDGMENT_TOOL],
+    tool_choice: { type: "tool", name: JUDGMENT_TOOL.name },
+  });
+  const block = res.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
+  if (!block) throw new Error("理解判定の構造化出力が得られませんでした");
+  const input = block.input as Record<string, unknown>;
+  const clamp = (v: unknown) =>
+    Math.max(0, Math.min(1, typeof v === "number" ? v : 0));
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    concept: str(input.concept) || "（不明）",
+    domain: str(input.domain) || "（未分類）",
+    understanding: clamp(input.understanding),
+    confidence: clamp(input.confidence),
+    characterBelief: str(input.character_belief),
+    reply: str(input.reply),
+    openQuestion: str(input.open_question) || undefined,
+    contradiction: str(input.contradiction) || undefined,
+  };
+}
