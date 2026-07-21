@@ -22,8 +22,22 @@ MVP の縦切りは一通り完成。
 
 - TypeScript / Node（CLI）
 - SQLite（better-sqlite3）— 概念ごとの知識状態と復習期日
-- Claude（@anthropic-ai/sdk）— 理解判定・会話生成・矛盾検出
+- Claude — 理解判定・会話生成・矛盾検出（接続はプラガブル、下記）
 - Telegram Bot — 催促のクロスデバイス配送（PC＋スマホ）
+
+## LLM 接続（provider）
+
+`TEACHMATE_PROVIDER` で切り替え。
+
+- `claude-cli`（**API キー不要**）: `claude -p` をサブプロセスで呼び、既存の Claude Code ログインを流用。事前に `claude` にログイン済みであること。
+- `anthropic`（既定）: `ANTHROPIC_API_KEY` で Anthropic API を直接利用。
+- `TEACHMATE_MOCK=1`: オフラインのデモ用モック（キー・ログイン不要、応答は作り物）。
+
+```bash
+# 例: ログインを流用して動かす
+export TEACHMATE_PROVIDER=claude-cli
+node dist/index.js teach taro
+```
 
 ## セットアップ
 

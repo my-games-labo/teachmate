@@ -1,6 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Settings } from "./types.js";
 import { mockEnabled, mockSpeak, mockJudge, mockInterview } from "./mock.js";
+import {
+  cliComplete,
+  extractJson,
+  renderText,
+  renderStructured,
+  JUDGE_JSON_INSTRUCTION,
+  INTERVIEW_JSON_INSTRUCTION,
+} from "./cliProvider.js";
+
+type Provider = "anthropic" | "claude-cli";
+function provider(): Provider {
+  return process.env.TEACHMATE_PROVIDER === "claude-cli" ? "claude-cli" : "anthropic";
+}
 
 /**
  * Claude ラッパー。会話生成と「理解判定（構造化出力）」を提供する。
@@ -31,6 +44,7 @@ function client(): Anthropic {
 /** プレーンテキスト応答（キャラクターの発話生成に使う）。 */
 export async function speak(system: string, history: Turn[]): Promise<string> {
   if (mockEnabled()) return mockSpeak(system, history);
+  if (provider() === "claude-cli") return cliComplete(renderText(system, history));
   const res = await client().messages.create({
     model: model(),
     max_tokens: 1024,
@@ -163,25 +177,8 @@ const COURSE_TOOL: Anthropic.Tool = {
   },
 };
 
-/** 初回インタビューの1ターン（ツール強制でコース案を更新）。 */
-export async function interviewCourse(
-  system: string,
-  history: Turn[],
-): Promise<CourseProposal> {
-  if (mockEnabled()) return mockInterview(system, history);
-  const res = await client().messages.create({
-    model: model(),
-    max_tokens: 1024,
-    system,
-    messages: history,
-    tools: [COURSE_TOOL],
-    tool_choice: { type: "tool", name: COURSE_TOOL.name },
-  });
-  const block = res.content.find(
-    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
-  );
-  if (!block) throw new Error("コース案の構造化出力が得られませんでした");
-  const input = block.input as Record<string, unknown>;
+/** 構造化入力を CourseProposal に写す。 */
+function mapProposal(input: Record<string, unknown>): CourseProposal {
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const strength = str(input.nudge_strength);
   return {
@@ -206,22 +203,35 @@ export async function interviewCourse(
   };
 }
 
-/** ユーザーの説明を理解判定し、会話返答を生成する（ツール強制）。 */
-export async function judge(system: string, history: Turn[]): Promise<Judgment> {
-  if (mockEnabled()) return mockJudge(history);
+/** 初回インタビューの1ターン（現時点のコース案とキャラの発話を返す）。 */
+export async function interviewCourse(
+  system: string,
+  history: Turn[],
+): Promise<CourseProposal> {
+  if (mockEnabled()) return mockInterview(system, history);
+  if (provider() === "claude-cli") {
+    const out = await cliComplete(
+      renderStructured(system, history, INTERVIEW_JSON_INSTRUCTION),
+    );
+    return mapProposal(extractJson(out));
+  }
   const res = await client().messages.create({
     model: model(),
     max_tokens: 1024,
     system,
     messages: history,
-    tools: [JUDGMENT_TOOL],
-    tool_choice: { type: "tool", name: JUDGMENT_TOOL.name },
+    tools: [COURSE_TOOL],
+    tool_choice: { type: "tool", name: COURSE_TOOL.name },
   });
   const block = res.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
   );
-  if (!block) throw new Error("理解判定の構造化出力が得られませんでした");
-  const input = block.input as Record<string, unknown>;
+  if (!block) throw new Error("コース案の構造化出力が得られませんでした");
+  return mapProposal(block.input as Record<string, unknown>);
+}
+
+/** 構造化入力（ツール input / CLI の JSON）を Judgment に写す。 */
+function mapJudgment(input: Record<string, unknown>): Judgment {
   const clamp = (v: unknown) =>
     Math.max(0, Math.min(1, typeof v === "number" ? v : 0));
   const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -235,4 +245,28 @@ export async function judge(system: string, history: Turn[]): Promise<Judgment> 
     openQuestion: str(input.open_question) || undefined,
     contradiction: str(input.contradiction) || undefined,
   };
+}
+
+/** ユーザーの説明を理解判定し、会話返答を生成する。 */
+export async function judge(system: string, history: Turn[]): Promise<Judgment> {
+  if (mockEnabled()) return mockJudge(history);
+  if (provider() === "claude-cli") {
+    const out = await cliComplete(
+      renderStructured(system, history, JUDGE_JSON_INSTRUCTION),
+    );
+    return mapJudgment(extractJson(out));
+  }
+  const res = await client().messages.create({
+    model: model(),
+    max_tokens: 1024,
+    system,
+    messages: history,
+    tools: [JUDGMENT_TOOL],
+    tool_choice: { type: "tool", name: JUDGMENT_TOOL.name },
+  });
+  const block = res.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
+  if (!block) throw new Error("理解判定の構造化出力が得られませんでした");
+  return mapJudgment(block.input as Record<string, unknown>);
 }

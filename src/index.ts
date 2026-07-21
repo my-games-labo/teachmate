@@ -44,7 +44,8 @@ function usage(): void {
   teachmate help                                   このヘルプ
 
 環境変数（~/.teachmate/.env または カレントの .env でも可）:
-  ANTHROPIC_API_KEY    Claude API キー（teach / 催促文生成に使用）
+  TEACHMATE_PROVIDER   LLM 接続先: anthropic（既定, 要APIキー）| claude-cli（claude ログイン流用）
+  ANTHROPIC_API_KEY    Claude API キー（provider=anthropic のとき使用）
   TELEGRAM_BOT_TOKEN   Telegram ボットのトークン（催促送信に必須）
   TEACHMATE_MODEL      使用モデル（既定 claude-sonnet-4-6）
   TEACHMATE_HOME       データ配置（既定 ~/.teachmate）
