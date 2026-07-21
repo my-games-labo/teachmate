@@ -1,5 +1,4 @@
-import * as readline from "node:readline/promises";
-import { stdin, stdout } from "node:process";
+import { createPrompter } from "./prompt.js";
 import {
   openDb,
   readCourse,
@@ -109,11 +108,13 @@ export async function runTeachSession(name: string): Promise<void> {
   insertMessage(db, "character", opening, new Date().toISOString());
   console.log(`${name}: ${opening}\n`);
 
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  const rl = createPrompter();
   try {
     while (true) {
-      const input = (await rl.question("あなた> ")).trim();
-      if (input === "" ) continue;
+      const line = await rl.ask("あなた> ");
+      if (line === null) break;
+      const input = line.trim();
+      if (input === "") continue;
       if (input === "/exit" || input === "/quit") break;
 
       const now = new Date().toISOString();

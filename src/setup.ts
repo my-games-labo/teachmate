@@ -1,5 +1,4 @@
-import * as readline from "node:readline/promises";
-import { stdin, stdout } from "node:process";
+import { createPrompter } from "./prompt.js";
 import {
   readCourse,
   writeCourse,
@@ -83,13 +82,15 @@ export async function runSetupSession(name: string): Promise<void> {
   history.push({ role: "assistant", content: opening });
   console.log(`${name}: ${opening}\n`);
 
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  const rl = createPrompter();
   let confirming = false;
   let pending: { course: Course; settings: Settings } | null = null;
 
   try {
     while (true) {
-      const input = (await rl.question("あなた> ")).trim();
+      const line = await rl.ask("あなた> ");
+      if (line === null) break;
+      const input = line.trim();
       if (input === "") continue;
       if (input === "/exit" || input === "/quit") {
         console.log("セットアップを中断しました（保存していません）。");

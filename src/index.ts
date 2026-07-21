@@ -49,6 +49,7 @@ function usage(): void {
   TEACHMATE_MODEL      使用モデル（既定 claude-sonnet-4-6）
   TEACHMATE_HOME       データ配置（既定 ~/.teachmate）
   TEACHMATE_DEBUG=1    理解判定の内部値を表示
+  TEACHMATE_MOCK=1     オフライン・デモ用のモック応答（API キー不要）
 `);
 }
 

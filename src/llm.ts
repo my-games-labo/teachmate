@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Settings } from "./types.js";
+import { mockEnabled, mockSpeak, mockJudge, mockInterview } from "./mock.js";
 
 /**
  * Claude ラッパー。会話生成と「理解判定（構造化出力）」を提供する。
@@ -29,6 +30,7 @@ function client(): Anthropic {
 
 /** プレーンテキスト応答（キャラクターの発話生成に使う）。 */
 export async function speak(system: string, history: Turn[]): Promise<string> {
+  if (mockEnabled()) return mockSpeak(system, history);
   const res = await client().messages.create({
     model: model(),
     max_tokens: 1024,
@@ -166,6 +168,7 @@ export async function interviewCourse(
   system: string,
   history: Turn[],
 ): Promise<CourseProposal> {
+  if (mockEnabled()) return mockInterview(system, history);
   const res = await client().messages.create({
     model: model(),
     max_tokens: 1024,
@@ -205,6 +208,7 @@ export async function interviewCourse(
 
 /** ユーザーの説明を理解判定し、会話返答を生成する（ツール強制）。 */
 export async function judge(system: string, history: Turn[]): Promise<Judgment> {
+  if (mockEnabled()) return mockJudge(history);
   const res = await client().messages.create({
     model: model(),
     max_tokens: 1024,
