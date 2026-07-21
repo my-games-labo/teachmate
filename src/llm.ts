@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { Settings } from "./types.js";
 
 /**
  * Claude ラッパー。会話生成と「理解判定（構造化出力）」を提供する。
@@ -104,6 +105,103 @@ const JUDGMENT_TOOL: Anthropic.Tool = {
     ],
   },
 };
+
+/** 初回セットアップ会話で組み立てるコース案（仕様書 第6章）。 */
+export interface CourseProposal {
+  reply: string; // キャラクターの次の発話（未完了なら次の質問、完了なら確認の要約）
+  ready: boolean; // 必要な情報が揃ったか
+  theme?: string;
+  purpose?: string;
+  goal?: string;
+  scope?: string;
+  domains?: string[];
+  examDate?: string; // ISO 日付 or ""
+  userLevel?: string;
+  firstTopic?: string;
+  sessionsPerWeek?: number;
+  nudgeStrength?: Settings["nudgeStrength"];
+}
+
+const COURSE_TOOL: Anthropic.Tool = {
+  name: "propose_course",
+  description:
+    "初回インタビューの現時点の内容から学習コース案を更新し、キャラクターの次の発話を返す。毎ターン必ず1回呼ぶ。",
+  input_schema: {
+    type: "object",
+    properties: {
+      reply: {
+        type: "string",
+        description:
+          "キャラクターの次の発話。まだ情報が足りなければ次の質問を1つだけ。十分揃ったら、集めた内容を短く要約し『この方針で始めていい？』と確認する。",
+      },
+      ready: {
+        type: "boolean",
+        description: "学習を始めるのに十分な情報が揃い、ユーザーの確認を待つ段階なら true。",
+      },
+      theme: { type: "string", description: "学習テーマ（例: AWS認定 SAA）" },
+      purpose: { type: "string", description: "学習目的" },
+      goal: { type: "string", description: "到達目標" },
+      scope: { type: "string", description: "学習範囲" },
+      domains: {
+        type: "array",
+        items: { type: "string" },
+        description: "学習分野を学ぶ順に並べたもの",
+      },
+      exam_date: { type: "string", description: "試験日/期限（YYYY-MM-DD）。無ければ空文字。" },
+      user_level: { type: "string", description: "ユーザーの現在の理解度" },
+      first_topic: { type: "string", description: "最初に扱う話題" },
+      sessions_per_week: { type: "number", description: "週あたりの学習回数の希望" },
+      nudge_strength: {
+        type: "string",
+        enum: ["soft", "normal", "firm"],
+        description: "催促の強さの希望",
+      },
+    },
+    required: ["reply", "ready"],
+  },
+};
+
+/** 初回インタビューの1ターン（ツール強制でコース案を更新）。 */
+export async function interviewCourse(
+  system: string,
+  history: Turn[],
+): Promise<CourseProposal> {
+  const res = await client().messages.create({
+    model: model(),
+    max_tokens: 1024,
+    system,
+    messages: history,
+    tools: [COURSE_TOOL],
+    tool_choice: { type: "tool", name: COURSE_TOOL.name },
+  });
+  const block = res.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
+  if (!block) throw new Error("コース案の構造化出力が得られませんでした");
+  const input = block.input as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const strength = str(input.nudge_strength);
+  return {
+    reply: str(input.reply) ?? "",
+    ready: input.ready === true,
+    theme: str(input.theme),
+    purpose: str(input.purpose),
+    goal: str(input.goal),
+    scope: str(input.scope),
+    domains: Array.isArray(input.domains)
+      ? input.domains.filter((d): d is string => typeof d === "string")
+      : undefined,
+    examDate: str(input.exam_date),
+    userLevel: str(input.user_level),
+    firstTopic: str(input.first_topic),
+    sessionsPerWeek:
+      typeof input.sessions_per_week === "number" ? input.sessions_per_week : undefined,
+    nudgeStrength:
+      strength === "soft" || strength === "normal" || strength === "firm"
+        ? strength
+        : undefined,
+  };
+}
 
 /** ユーザーの説明を理解判定し、会話返答を生成する（ツール強制）。 */
 export async function judge(system: string, history: Turn[]): Promise<Judgment> {

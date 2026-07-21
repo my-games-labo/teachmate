@@ -11,7 +11,9 @@ import {
 } from "./store.js";
 import { listCharacters, characterExists, repoRoot, baseDir } from "./paths.js";
 import { chunkText } from "./rag.js";
+import { extractPdfText } from "./pdf.js";
 import { runTeachSession } from "./session.js";
+import { runSetupSession } from "./setup.js";
 import { runNudgeCheck } from "./nudge.js";
 import { getTelegramChats, sendTelegram } from "./telegram.js";
 import { loadEnv } from "./env.js";
@@ -29,8 +31,9 @@ function usage(): void {
 使い方:
   teachmate init <name> [--theme "AWS認定 SAA"]   キャラクターを新規作成
   teachmate list                                   キャラクター一覧
+  teachmate setup <name>                           初回セットアップ会話でコースを決める
   teachmate teach <name>                           キャラクターに教える（会話セッション）
-  teachmate ingest <name> <path>                   基準知識（公式ドキュメント）を取り込む
+  teachmate ingest <name> <path>                   基準知識を取り込む（.md/.txt/.pdf）
   teachmate nudge-check [--dry-run] [--force]      催促を判定して Telegram 送信
   teachmate telegram whoami                        ボットに話しかけた chat_id を確認
   teachmate telegram <name> <chatId>               送信先 chat_id を設定
@@ -229,17 +232,25 @@ function cmdSchedule(args: string[]): void {
   process.exit(1);
 }
 
-/** .md/.txt ファイル（またはそのディレクトリ）を集める。 */
+const INGEST_EXT = /\.(md|markdown|txt|pdf)$/i;
+
+/** .md/.txt/.pdf ファイル（またはそのディレクトリ）を集める。 */
 function collectTextFiles(target: string): string[] {
   const stat = fs.statSync(target);
   if (stat.isFile()) return [target];
   return fs
     .readdirSync(target)
-    .filter((f) => /\.(md|markdown|txt)$/i.test(f))
+    .filter((f) => INGEST_EXT.test(f))
     .map((f) => path.join(target, f));
 }
 
-function cmdIngest(args: string[]): void {
+/** ファイルからテキストを読む（PDF は抽出）。 */
+async function readDocText(file: string): Promise<string> {
+  if (/\.pdf$/i.test(file)) return extractPdfText(fs.readFileSync(file));
+  return fs.readFileSync(file, "utf8");
+}
+
+async function cmdIngest(args: string[]): Promise<void> {
   const [name, target] = args;
   if (!name || !target) {
     console.error("エラー: teachmate ingest <name> <path>（ファイル or ディレクトリ）");
@@ -258,13 +269,13 @@ function cmdIngest(args: string[]): void {
   try {
     const files = collectTextFiles(target);
     if (files.length === 0) {
-      console.error("エラー: .md/.txt ファイルが見つかりませんでした");
+      console.error("エラー: .md/.txt/.pdf ファイルが見つかりませんでした");
       process.exit(1);
     }
     let total = 0;
     for (const file of files) {
-      const text = fs.readFileSync(file, "utf8");
       const source = path.basename(file);
+      const text = await readDocText(file);
       const chunks = chunkText(text);
       replaceDocChunks(db, source, chunks, now);
       total += chunks.length;
@@ -276,17 +287,25 @@ function cmdIngest(args: string[]): void {
   }
 }
 
-async function cmdTeach(args: string[]): Promise<void> {
-  const name = args[0];
+function requireCharacter(name: string | undefined, cmd: string): asserts name is string {
   if (!name) {
-    console.error("エラー: キャラクター名を指定してください（teachmate teach <name>）");
+    console.error(`エラー: キャラクター名を指定してください（teachmate ${cmd} <name>）`);
     process.exit(1);
   }
   if (!characterExists(name)) {
     console.error(`エラー: キャラクター "${name}" が見つかりません。まず init してください。`);
     process.exit(1);
   }
-  await runTeachSession(name);
+}
+
+async function cmdTeach(args: string[]): Promise<void> {
+  requireCharacter(args[0], "teach");
+  await runTeachSession(args[0]);
+}
+
+async function cmdSetup(args: string[]): Promise<void> {
+  requireCharacter(args[0], "setup");
+  await runSetupSession(args[0]);
 }
 
 async function main(): Promise<void> {
@@ -299,11 +318,14 @@ async function main(): Promise<void> {
     case "list":
       cmdList();
       break;
+    case "setup":
+      await cmdSetup(rest);
+      break;
     case "teach":
       await cmdTeach(rest);
       break;
     case "ingest":
-      cmdIngest(rest);
+      await cmdIngest(rest);
       break;
     case "nudge-check":
       await cmdNudgeCheck(rest);
