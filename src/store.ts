@@ -359,7 +359,7 @@ export function dueAgendaCandidates(
       `SELECT c.id AS conceptId, c.domain AS domain, c.name AS concept,
               k.confidence AS confidence, k.understanding AS understanding,
               k.wrong_count AS wrongCount, k.last_reviewed_at AS lastReviewedAt,
-              k.next_review_at AS nextReviewAt
+              k.next_review_at AS nextReviewAt, k.interval_days AS intervalDays
          FROM knowledge_state k
          JOIN concepts c ON c.id = k.concept_id
         WHERE (k.next_review_at IS NOT NULL AND k.next_review_at <= @now)

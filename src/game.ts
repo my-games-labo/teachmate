@@ -90,6 +90,17 @@ function retention(elapsedDays: number, stabilityDays: number): number {
   return Math.exp(-Math.max(0, elapsedDays) / Math.max(0.5, stabilityDays));
 }
 
+/** 理解の保持率 0..1（1=よく覚えている, 低い=忘れかけ）。アジェンダの覚えなおし判定に使う。 */
+export function understandingRetention(
+  intervalDays: number,
+  lastReviewedAt: string | null,
+  nowMs: number,
+): number {
+  if (!lastReviewedAt) return 1;
+  const elapsedDays = (nowMs - Date.parse(lastReviewedAt)) / 86400_000;
+  return retention(elapsedDays, Math.max(1, intervalDays) * 2);
+}
+
 /** 理解度は緩やかに（下限あり）、確信度は速く減衰させる。 */
 function decay(
   understanding: number,

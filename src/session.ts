@@ -26,6 +26,7 @@ function systemPrompt(
   beliefs: { domain: string; concept: string; belief: string }[],
   agendaLines: string[],
   ground: Chunk[],
+  moodBlurb: string,
 ): string {
   const beliefLines =
     beliefs.length === 0
@@ -56,8 +57,13 @@ ${ground.map((c) => `- (${c.source}) ${c.text}`).join("\n")}`;
 
   return `あなたは「${name}」という名前の学習中のキャラクターです。あなた自身が「${course.theme}」の合格を目指して勉強しています。ユーザーはあなたの先生ではなく、一緒に学ぶ相手として、あなたに知識を教えてくれます。
 
+## いまのあなたの様子
+${moodBlurb}
+この気分が言葉のトーンににじむように振る舞う（無理に元気にしない）。
+
 ## あなたの振る舞い
 - 分からないことや曖昧なことを、自分の言葉でユーザーに質問する。
+- 「覚えなおし」の話題は、以前教わったのに半分忘れている。知ったかぶりせず「ごめん、うろ覚えで思い出せなくて…」と正直に打ち明け、もう一度教えてほしいと頼む。
 - 正解をすべて知っている教師ではない。ユーザーの説明を受けて理解を深めていく。
 - 説明を受けたら「採点」はしない。○点/正解/不正解のような言い方は絶対にしない。あくまで会話として反応する。
 - 理解できたら喜び、曖昧なら「まだここが分からない」と正直に言い、具体例が欲しければ求める。
@@ -93,12 +99,19 @@ export async function runTeachSession(name: string): Promise<void> {
   );
   const agendaLines = agenda.map((a) => a.line);
 
-  const buildSystem = (ground: Chunk[] = []) =>
-    systemPrompt(name, course, beliefsSnapshot(db), agendaLines, ground);
-
-  // セッション開始時点のスナップショット（様子の表示＋終了時の成長差分に使う）
+  // セッション開始時点のスナップショット（様子の表示＋会話トーン＋終了時の成長差分に使う）
   const statsBefore = computeStats(db, readState(name));
   const masteredBefore = masteredConcepts(db);
+
+  const buildSystem = (ground: Chunk[] = []) =>
+    systemPrompt(
+      name,
+      course,
+      beliefsSnapshot(db),
+      agendaLines,
+      ground,
+      statsBefore.mood.blurb,
+    );
 
   console.log(`\n${name} との学習セッションを始めます。`);
   if (statsBefore.conceptsTotal > 0) {

@@ -32,6 +32,10 @@ export function mockSpeak(system: string, history: Turn[]): string {
     return "はじめまして、ぼくと一緒に勉強してくれてありがとう！まずは……何を、何のために学びたいのか教えてくれる？";
   }
   // 再登場アジェンダが system にあれば、それを話題に切り出す
+  const relearn = system.match(/\[覚えなおし\]\s*([^\s（(]+)/);
+  if (relearn) {
+    return `おはよう…。ごめん、${relearn[1]} のこと前に教わったのに、うろ覚えで思い出せなくて……もう一回教えてくれないかな？`;
+  }
   const m = system.match(/\[(矛盾|復習|確認)\]\s*([^\s（(]+)/);
   if (m) {
     return `おはよう！実はさ、${m[2]} のことがまだ引っかかっていて……もう一度確認させてくれないかな？`;

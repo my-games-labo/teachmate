@@ -4,6 +4,7 @@
  * 重み付けし、条件付きのランダム性を加えて数件だけ選ぶ。
  * 「毎回すぐ全部指摘する」のではなく、重要なものを優先しつつ揺らぎを持たせる。
  */
+import { understandingRetention } from "./game.js";
 
 export interface AgendaCandidate {
   conceptId: number;
@@ -14,13 +15,14 @@ export interface AgendaCandidate {
   wrongCount: number;
   lastReviewedAt: string | null;
   nextReviewAt: string | null;
+  intervalDays: number;
   contradiction?: string; // 未解決の矛盾
   question?: string; // 未解決の疑問
 }
 
 export interface AgendaItem {
   candidate: AgendaCandidate;
-  kind: "矛盾" | "復習" | "確認";
+  kind: "矛盾" | "覚えなおし" | "復習" | "確認";
   score: number;
   line: string;
 }
@@ -42,12 +44,15 @@ export function buildAgenda(
   const scored: AgendaItem[] = candidates.map((c) => {
     const overdue = elapsedDays(c.nextReviewAt, nowMs);
     const sinceReview = elapsedDays(c.lastReviewedAt, nowMs);
+    // 忘却度（0..1, 低いほど忘れている）
+    const ret = understandingRetention(c.intervalDays, c.lastReviewedAt, nowMs);
 
     let score =
       overdue * 0.5 +
       (1 - c.confidence) * 1.5 +
       c.wrongCount * 1.0 +
-      sinceReview * 0.1;
+      sinceReview * 0.1 +
+      (1 - ret) * 2.0; // 忘れているほど優先
     if (c.contradiction) score += 2.0; // 矛盾は重い
     if (c.question) score += 0.5;
 
@@ -56,13 +61,17 @@ export function buildAgenda(
 
     const kind: AgendaItem["kind"] = c.contradiction
       ? "矛盾"
-      : c.understanding < 0.5 || c.confidence < 0.5 || c.wrongCount > 0
-        ? "復習"
-        : "確認";
+      : ret < 0.5
+        ? "覚えなおし"
+        : c.understanding < 0.5 || c.confidence < 0.5 || c.wrongCount > 0
+          ? "復習"
+          : "確認";
 
     let line: string;
     if (kind === "矛盾") {
       line = `[矛盾] ${c.concept}（${c.domain}）: 以前の説明と食い違う気がする。やんわり尋ねて確かめたい。手がかり: ${c.contradiction}`;
+    } else if (kind === "覚えなおし") {
+      line = `[覚えなおし] ${c.concept}（${c.domain}）: 前に教わったのに、うろ覚えで思い出せない。正直に「忘れちゃった」と言って、もう一度教えてほしいと頼む`;
     } else if (kind === "復習") {
       line = `[復習] ${c.concept}（${c.domain}）: まだ自信がない。具体例や言い換えで確認したい${
         c.question ? `（引っかかっている点: ${c.question}）` : ""
