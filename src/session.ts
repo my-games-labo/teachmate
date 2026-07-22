@@ -96,7 +96,14 @@ export async function runTeachSession(name: string): Promise<void> {
   const buildSystem = (ground: Chunk[] = []) =>
     systemPrompt(name, course, beliefsSnapshot(db), agendaLines, ground);
 
+  // セッション開始時点のスナップショット（様子の表示＋終了時の成長差分に使う）
+  const statsBefore = computeStats(db, readState(name));
+  const masteredBefore = masteredConcepts(db);
+
   console.log(`\n${name} との学習セッションを始めます。`);
+  if (statsBefore.conceptsTotal > 0) {
+    console.log(`（${name} の様子: ${statsBefore.mood.face} ${statsBefore.mood.blurb}）`);
+  }
   console.log(`（説明を入力してください。終了は /exit または Ctrl+C）\n`);
   if (DEBUG && agenda.length > 0) {
     console.log("  [debug] 今日の再登場アジェンダ:");
@@ -115,10 +122,6 @@ export async function runTeachSession(name: string): Promise<void> {
   history.push({ role: "assistant", content: opening });
   insertMessage(db, "character", opening, new Date().toISOString());
   console.log(`${name}: ${opening}\n`);
-
-  // セッション開始時点のスナップショット（終了時に成長差分を出すため）
-  const statsBefore = computeStats(db, readState(name));
-  const masteredBefore = masteredConcepts(db);
 
   const rl = createPrompter();
   let taughtSomething = false;

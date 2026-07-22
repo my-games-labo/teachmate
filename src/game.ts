@@ -18,20 +18,31 @@ export interface Stage {
   face: string;
 }
 
+/** 内部状態から導く「気分」＝キャラの見た目の状態。 */
+export interface Mood {
+  name: string;
+  face: string;
+  blurb: string;
+}
+
 export interface GameStats {
   level: number;
   xp: number;
   xpInLevel: number;
   xpForNext: number;
-  overallMastery: number;
-  domains: DomainMastery[];
+  overallMastery: number; // 減衰後（いま覚えている度合い）
+  domains: DomainMastery[]; // 減衰後
   conceptsTotal: number;
-  conceptsMastered: number;
+  conceptsMastered: number; // 累積の到達（減衰しない実績）
   streak: number;
   title: string;
   stage: Stage;
   mockPassed: number;
   mockTotal: number;
+  // 頭の中（現在の記憶状態）
+  memory: { solid: number; fuzzy: number; fading: number };
+  contradictions: number;
+  mood: Mood;
 }
 
 /** 「大分野（小分野）」を大分野に丸める。表記ゆれ吸収のため trim も行う。 */
@@ -70,24 +81,74 @@ function levelForXp(xp: number): number {
   return Math.floor(Math.sqrt(xp / 50)) + 1;
 }
 
+// ── 忘却曲線（compute-on-read の減衰）──────────────────────────────
+// 保存値は書き換えず、読むときに「経過時間」で減衰させて“いま覚えている度合い”を出す。
+// 安定度 S は間隔反復の interval_days（=よく反復したほど大きい）から作る。
+const RETAIN_FLOOR = 0.2; // 理解は完全には消えない（残る下限）
+
+function retention(elapsedDays: number, stabilityDays: number): number {
+  return Math.exp(-Math.max(0, elapsedDays) / Math.max(0.5, stabilityDays));
+}
+
+/** 理解度は緩やかに（下限あり）、確信度は速く減衰させる。 */
+function decay(
+  understanding: number,
+  confidence: number,
+  intervalDays: number,
+  elapsedDays: number,
+): { u: number; c: number } {
+  const rU = retention(elapsedDays, Math.max(1, intervalDays) * 2);
+  const rC = retention(elapsedDays, Math.max(0.5, intervalDays));
+  return {
+    u: understanding * (RETAIN_FLOOR + (1 - RETAIN_FLOOR) * rU),
+    c: confidence * rC,
+  };
+}
+
+function moodOf(
+  total: number,
+  memory: { solid: number; fuzzy: number; fading: number },
+  contradictions: number,
+): Mood {
+  if (total === 0)
+    return { name: "まっさら", face: "(・ω・)", blurb: "まだ何も教わっていない。まっさらな状態。" };
+  if (contradictions > 0)
+    return { name: "こんがらがり", face: "(@_@)", blurb: "教わった内容の食い違いで頭がこんがらがっている。" };
+  const f = (n: number) => n / total;
+  if (f(memory.fading) >= 0.4)
+    return { name: "そわそわ", face: "(・_・;)", blurb: "だいぶ忘れかけていて、そわそわしている。" };
+  if (f(memory.fuzzy) >= 0.4)
+    return { name: "うろ覚え", face: "(._.?)", blurb: "うろ覚えが多くて、少し自信がなさそう。" };
+  if (f(memory.solid) >= 0.6)
+    return { name: "ごきげん", face: "(^o^)", blurb: "しっかり覚えていて、調子が良さそう。" };
+  return { name: "ぼちぼち", face: "(・v・)", blurb: "ぼちぼち。まだ固めきれていない知識もある。" };
+}
+
 interface Row {
   domain: string;
   understanding: number;
   confidence: number;
   taught_count: number;
   applied_count: number;
+  interval_days: number;
+  last_reviewed_at: string | null;
 }
 
-export function computeStats(db: Database.Database, state: State): GameStats {
+export function computeStats(
+  db: Database.Database,
+  state: State,
+  now: Date = new Date(),
+): GameStats {
   const rows = db
     .prepare(
       `SELECT c.domain AS domain, k.understanding, k.confidence,
-              k.taught_count, k.applied_count
+              k.taught_count, k.applied_count, k.interval_days, k.last_reviewed_at
          FROM knowledge_state k JOIN concepts c ON c.id = k.concept_id`,
     )
     .all() as Row[];
+  const nowMs = now.getTime();
 
-  // XP: 教えた回数・理解×確信・応用回数から
+  // XP（累積の実績なので減衰させない）: 教えた回数・理解×確信・応用回数から
   let xp = 0;
   for (const r of rows) {
     xp += r.taught_count * 8;
@@ -98,16 +159,23 @@ export function computeStats(db: Database.Database, state: State): GameStats {
   const xpInLevel = xp - xpForLevel(level);
   const xpForNext = xpForLevel(level + 1) - xpForLevel(level);
 
-  // 分野別習熟度（その分野の概念の理解度の平均）。
-  // LLM が「大分野（小分野）」の形で細かく返すことがあるので括弧以降を落として束ねる。
+  // 各概念の「いま覚えている度合い」を忘却曲線で計算
+  const eff = rows.map((r) => {
+    const elapsedDays = r.last_reviewed_at
+      ? (nowMs - Date.parse(r.last_reviewed_at)) / 86400_000
+      : 0;
+    return decay(r.understanding, r.confidence, r.interval_days, elapsedDays).u;
+  });
+
+  // 分野別習熟度（減衰後）。「大分野（小分野）」は括弧以降を落として束ねる。
   const byDomain = new Map<string, { sum: number; n: number }>();
-  for (const r of rows) {
+  rows.forEach((r, i) => {
     const key = normalizeDomain(r.domain);
     const e = byDomain.get(key) ?? { sum: 0, n: 0 };
-    e.sum += r.understanding;
+    e.sum += eff[i];
     e.n += 1;
     byDomain.set(key, e);
-  }
+  });
   const domains: DomainMastery[] = [...byDomain.entries()]
     .map(([domain, e]) => ({ domain, mastery: e.sum / e.n, count: e.n }))
     .sort((a, b) => b.mastery - a.mastery);
@@ -115,9 +183,23 @@ export function computeStats(db: Database.Database, state: State): GameStats {
   const conceptsTotal = rows.length;
   const conceptsMastered = rows.filter((r) => r.understanding >= 0.8).length;
   const overallMastery =
-    conceptsTotal === 0
-      ? 0
-      : rows.reduce((s, r) => s + r.understanding, 0) / conceptsTotal;
+    conceptsTotal === 0 ? 0 : eff.reduce((s, v) => s + v, 0) / conceptsTotal;
+
+  // 頭の中（現在の記憶状態）を分類
+  const memory = { solid: 0, fuzzy: 0, fading: 0 };
+  for (const v of eff) {
+    if (v >= 0.7) memory.solid++;
+    else if (v >= 0.4) memory.fuzzy++;
+    else memory.fading++;
+  }
+  const contradictions = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM open_items WHERE kind='contradiction' AND resolved=0`,
+      )
+      .get() as { n: number }
+  ).n;
+  const mood = moodOf(conceptsTotal, memory, contradictions);
 
   // 称号（達成した中で最も高いもの）
   const top = domains[0];
@@ -144,6 +226,9 @@ export function computeStats(db: Database.Database, state: State): GameStats {
     stage: stageForLevel(level),
     mockPassed: state.mockPassed ?? 0,
     mockTotal: 5,
+    memory,
+    contradictions,
+    mood,
   };
 }
 

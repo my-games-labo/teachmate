@@ -8,9 +8,14 @@ function bar(pct: number, width = 10): string {
 
 /** 全角を2幅として概算した表示幅で右パディング。 */
 function padDisplay(s: string, width: number): string {
-  let w = 0;
-  for (const ch of s) w += ch.charCodeAt(0) > 0xff ? 2 : 1;
-  return s + " ".repeat(Math.max(0, width - w));
+  return s + " ".repeat(Math.max(0, width - displayWidth(s)));
+}
+
+/** 表示幅 width の中央に置く（左右を空白で埋める）。 */
+function centerDisplay(s: string, width: number): string {
+  const pad = Math.max(0, width - displayWidth(s));
+  const left = Math.floor(pad / 2);
+  return " ".repeat(left) + s + " ".repeat(pad - left);
 }
 
 /** ダッシュボードを文字列にして返す。 */
@@ -21,12 +26,25 @@ export function renderDashboard(name: string, s: GameStats): string {
   out.push("");
   out.push(`  ${name}   Lv.${s.level}   ${flame}   称号: ${s.title}`);
   out.push("");
-  out.push(`    ╔═════════╗`);
-  out.push(`    ║  ${padDisplay(s.stage.face, 5)}  ║   ${s.stage.name}`);
-  out.push(`    ╚═════════╝   XP ${bar(s.xpForNext ? s.xpInLevel / s.xpForNext : 1)} ${s.xpInLevel}/${s.xpForNext}`);
+  // キャラの箱: 顔＝いまの気分、右に成長ステージ／気分名
+  out.push(`    ╔═══════════╗`);
+  out.push(`    ║ ${centerDisplay(s.mood.face, 9)} ║   ${s.stage.name} / ${s.mood.name}`);
+  out.push(`    ╚═══════════╝   XP ${bar(s.xpForNext ? s.xpInLevel / s.xpForNext : 1)} ${s.xpInLevel}/${s.xpForNext}`);
+  out.push(`  ${name} の様子: ${s.mood.blurb}`);
   out.push("");
 
-  out.push(`  分野の習熟度`);
+  // 頭の中（現在の記憶状態）
+  out.push(`  頭の中`);
+  const dots = (n: number) => "●".repeat(Math.min(n, 12));
+  out.push(`    しっかり  ${padDisplay(dots(s.memory.solid), 12)}  ${s.memory.solid}`);
+  out.push(`    うろ覚え  ${padDisplay(dots(s.memory.fuzzy), 12)}  ${s.memory.fuzzy}`);
+  out.push(`    忘れかけ  ${padDisplay(dots(s.memory.fading), 12)}  ${s.memory.fading}`);
+  if (s.contradictions > 0) {
+    out.push(`    モヤモヤ  ${padDisplay("▲".repeat(Math.min(s.contradictions, 12)), 12)}  ${s.contradictions}  （未解決の矛盾）`);
+  }
+  out.push("");
+
+  out.push(`  分野の習熟度（いま覚えている度合い）`);
   if (s.domains.length === 0) {
     out.push(`    （まだ何も教わっていません。teach で教え始めよう）`);
   } else {
