@@ -14,7 +14,7 @@ import {
 } from "./store.js";
 import { speak, judge, Turn } from "./llm.js";
 import { bumpStreak, computeStats, masteredConcepts } from "./game.js";
-import { renderGrowth } from "./dashboard.js";
+import { renderGrowth, renderDashboard, renderPanel } from "./dashboard.js";
 import { buildAgenda } from "./review.js";
 import { Chunk } from "./rag.js";
 import { Course, Persona, personaPrompt } from "./types.js";
@@ -119,17 +119,24 @@ export async function runTeachSession(name: string): Promise<void> {
       statsBefore.mood.blurb,
     );
 
-  console.log(`\n${name} との学習セッションを始めます。`);
-  if (statsBefore.conceptsTotal > 0) {
-    console.log(`（${name} の様子: ${statsBefore.mood.face} ${statsBefore.mood.blurb}）`);
-  }
-  console.log(`（説明を入力してください。終了は /exit または Ctrl+C）\n`);
-  if (DEBUG && agenda.length > 0) {
-    console.log("  [debug] 今日の再登場アジェンダ:");
-    for (const a of agenda)
-      console.log(`    - (${a.kind}, score=${a.score.toFixed(2)}) ${a.candidate.concept}`);
+  // ライブ描画（TTY のときだけ画面を再描画。パイプ実行時は行を流す）
+  const live = process.stdout.isTTY === true;
+  const transcript: string[] = [];
+  const clearScreen = () => {
+    if (live) process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+  };
+  const redraw = () => {
+    if (!live) return;
+    clearScreen();
+    console.log(renderPanel(name, computeStats(db, readState(name))));
     console.log("");
-  }
+    console.log(transcript.slice(-10).join("\n\n"));
+  };
+  /** 会話行を追加。ライブでなければその場で出力。 */
+  const say = (lineText: string) => {
+    transcript.push(lineText);
+    if (!live) console.log("\n" + lineText);
+  };
 
   // キャラクターから最初の質問（内部キックオフ。messages には保存しない）
   const kickoff =
@@ -140,22 +147,40 @@ export async function runTeachSession(name: string): Promise<void> {
   const opening = await speak(buildSystem(), history);
   history.push({ role: "assistant", content: opening });
   insertMessage(db, "character", opening, new Date().toISOString());
-  console.log(`${name}: ${opening}\n`);
+  say(`${name}: ${opening}`);
 
   const rl = createPrompter();
   let taughtSomething = false;
   try {
     while (true) {
-      const line = await rl.ask("あなた> ");
+      redraw();
+      const line = await rl.ask("\nあなた> ");
       if (line === null) break;
       const input = line.trim();
       if (input === "") continue;
       if (input === "/exit" || input === "/quit") break;
+      if (input === "/status") {
+        clearScreen();
+        console.log(renderDashboard(name, computeStats(db, readState(name))));
+        await rl.ask("（Enter で会話に戻る）");
+        continue;
+      }
+      if (input === "/help") {
+        clearScreen();
+        console.log("  コマンド: /status 詳しい成長状況 / /exit 終了");
+        await rl.ask("（Enter で会話に戻る）");
+        continue;
+      }
 
       const now = new Date().toISOString();
       history.push({ role: "user", content: input });
       insertMessage(db, "user", input, now);
       taughtSomething = true;
+      say(`あなた: ${input}`);
+
+      // 考え中の表示
+      redraw();
+      if (live) process.stdout.write(`\n${name} が考えています…`);
 
       // 基準知識を検索して判定に渡す（公式との食い違いを会話として気づける）
       const ground = retrieveGroundTruth(db, input, 3);
@@ -181,16 +206,15 @@ export async function runTeachSession(name: string): Promise<void> {
       insertMessage(db, "character", j.reply, now);
       history.push({ role: "assistant", content: j.reply });
 
-      console.log(`\n${name}: ${j.reply}\n`);
+      say(`${name}: ${j.reply}`);
       if (DEBUG) {
-        console.log(
+        say(
           `  [debug] 概念=${j.concept}/${j.domain} 理解=${j.understanding.toFixed(
             2,
           )} 確信=${j.confidence.toFixed(2)} 参照=${ground.length}件` +
             (j.openQuestion ? ` 疑問=${j.openQuestion}` : "") +
             (j.contradiction ? ` 矛盾=${j.contradiction}` : ""),
         );
-        console.log("");
       }
     }
   } finally {

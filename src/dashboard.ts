@@ -75,6 +75,24 @@ function displayWidth(s: string): number {
   return w;
 }
 
+/** 会話中に常時描くコンパクトなライブパネル。 */
+export function renderPanel(name: string, s: GameStats): string {
+  const rule = "─".repeat(48);
+  const lines: string[] = [];
+  lines.push(rule);
+  lines.push(
+    ` ${name}  Lv.${s.level}  ${s.mood.face} ${s.mood.name}   🔥${s.streak}日   称号:${s.title}`,
+  );
+  for (const d of s.domains.slice(0, 2)) {
+    lines.push(`   ${d.domain}  ${bar(d.mastery)} ${Math.round(d.mastery * 100)}%`);
+  }
+  let mind = ` 頭の中  ●しっかり${s.memory.solid}  ○うろ覚え${s.memory.fuzzy}  ✗忘れかけ${s.memory.fading}`;
+  if (s.contradictions > 0) mind += `  ▲矛盾${s.contradictions}`;
+  lines.push(mind);
+  lines.push(rule);
+  return lines.join("\n");
+}
+
 /** セッション前後の差分から「今日の成長」を描く。 */
 export function renderGrowth(
   name: string,
