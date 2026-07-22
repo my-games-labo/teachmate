@@ -26,6 +26,9 @@ export interface State {
   createdAt: string;
   lastActiveAt: string | null; // 最終学習日時
   lastNudgedAt: string | null; // 最終催促日時（二重催促防止）
+  streak?: number; // 連続学習日数
+  streakLastDay?: string | null; // 直近に学習した日（YYYY-MM-DD, ローカル）
+  mockPassed?: number; // 模擬試験の合格回数
 }
 
 export function defaultCourse(theme = "AWS認定 SAA"): Course {
@@ -58,5 +61,8 @@ export function defaultState(nowIso: string): State {
     createdAt: nowIso,
     lastActiveAt: null,
     lastNudgedAt: null,
+    streak: 0,
+    streakLastDay: null,
+    mockPassed: 0,
   };
 }

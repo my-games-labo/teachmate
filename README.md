@@ -15,6 +15,7 @@ MVP をステップ順に構築中。
 - [x] Step5: Telegram 送信＋タスクスケジューラ
 - [x] 拡張: PDF 取り込み（whitepaper/BlackBelt 用、unpdf）
 - [x] 拡張: 初回セットアップ会話（第6章）
+- [x] 拡張: 成長ダッシュボード（`status`）— レベル/分野別習熟度/ストリーク/称号
 
 MVP の縦切りは一通り完成。
 
@@ -53,6 +54,7 @@ npm run dev -- init taro --theme "AWS認定 SAA"
 npm run dev -- setup taro                        # 初回セットアップ会話でコースを決める
 npm run dev -- ingest taro docs/aws-sample.md    # 基準知識を取り込む（.md/.txt/.pdf）
 npm run dev -- teach taro                        # 教える会話セッション
+npm run dev -- status taro                        # 成長ダッシュボード
 npm run dev -- list
 npm run dev -- nudge-check --dry-run
 

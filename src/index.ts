@@ -10,6 +10,9 @@ import {
   countDocChunks,
 } from "./store.js";
 import { listCharacters, characterExists, repoRoot, baseDir } from "./paths.js";
+import { readState } from "./store.js";
+import { computeStats } from "./game.js";
+import { renderDashboard } from "./dashboard.js";
 import { chunkText } from "./rag.js";
 import { extractPdfText } from "./pdf.js";
 import { runTeachSession } from "./session.js";
@@ -33,6 +36,7 @@ function usage(): void {
   teachmate list                                   キャラクター一覧
   teachmate setup <name>                           初回セットアップ会話でコースを決める
   teachmate teach <name>                           キャラクターに教える（会話セッション）
+  teachmate status <name>                          成長ダッシュボード（レベル/習熟度/称号）
   teachmate ingest <name> <path>                   基準知識を取り込む（.md/.txt/.pdf）
   teachmate nudge-check [--dry-run] [--force]      催促を判定して Telegram 送信
   teachmate telegram whoami                        ボットに話しかけた chat_id を確認
@@ -310,6 +314,18 @@ async function cmdSetup(args: string[]): Promise<void> {
   await runSetupSession(args[0]);
 }
 
+function cmdStatus(args: string[]): void {
+  requireCharacter(args[0], "status");
+  const name = args[0];
+  const db = openDb(name);
+  try {
+    const stats = computeStats(db, readState(name));
+    console.log(renderDashboard(name, stats));
+  } finally {
+    db.close();
+  }
+}
+
 async function main(): Promise<void> {
   loadEnv();
   const [cmd, ...rest] = process.argv.slice(2);
@@ -325,6 +341,9 @@ async function main(): Promise<void> {
       break;
     case "teach":
       await cmdTeach(rest);
+      break;
+    case "status":
+      cmdStatus(rest);
       break;
     case "ingest":
       await cmdIngest(rest);

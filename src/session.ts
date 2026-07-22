@@ -12,6 +12,7 @@ import {
   setGroundTruth,
 } from "./store.js";
 import { speak, judge, Turn } from "./llm.js";
+import { bumpStreak } from "./game.js";
 import { buildAgenda } from "./review.js";
 import { Chunk } from "./rag.js";
 import { Course } from "./types.js";
@@ -115,6 +116,7 @@ export async function runTeachSession(name: string): Promise<void> {
   console.log(`${name}: ${opening}\n`);
 
   const rl = createPrompter();
+  let taughtSomething = false;
   try {
     while (true) {
       const line = await rl.ask("あなた> ");
@@ -126,6 +128,7 @@ export async function runTeachSession(name: string): Promise<void> {
       const now = new Date().toISOString();
       history.push({ role: "user", content: input });
       insertMessage(db, "user", input, now);
+      taughtSomething = true;
 
       // 基準知識を検索して判定に渡す（公式との食い違いを会話として気づける）
       const ground = retrieveGroundTruth(db, input, 3);
@@ -165,9 +168,15 @@ export async function runTeachSession(name: string): Promise<void> {
     }
   } finally {
     rl.close();
-    const state = readState(name);
-    state.lastActiveAt = new Date().toISOString();
-    writeState(name, state);
+    if (taughtSomething) {
+      // ストリーク更新（同日再セッションは据え置き）
+      const before = readState(name);
+      const after = bumpStreak(before, new Date());
+      writeState(name, after);
+      if ((after.streak ?? 0) !== (before.streak ?? 0)) {
+        console.log(`\n🔥 ${after.streak}日連続で学習中！`);
+      }
+    }
     db.close();
   }
   console.log(`\nお疲れさまでした。また教えてね。`);
