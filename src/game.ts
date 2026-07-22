@@ -147,6 +147,18 @@ export function computeStats(db: Database.Database, state: State): GameStats {
   };
 }
 
+/** 現在「習得済み（理解度0.8以上）」の概念名の集合。成長差分の判定に使う。 */
+export function masteredConcepts(db: Database.Database): Set<string> {
+  const rows = db
+    .prepare(
+      `SELECT c.name AS name FROM knowledge_state k
+         JOIN concepts c ON c.id = k.concept_id
+        WHERE k.understanding >= 0.8`,
+    )
+    .all() as { name: string }[];
+  return new Set(rows.map((r) => r.name));
+}
+
 /** セッション実施を反映してストリークを更新した新しい state を返す。 */
 export function bumpStreak(state: State, now: Date): State {
   const today = localDay(now);

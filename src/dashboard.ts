@@ -56,3 +56,31 @@ function displayWidth(s: string): number {
   for (const ch of s) w += ch.charCodeAt(0) > 0xff ? 2 : 1;
   return w;
 }
+
+/** セッション前後の差分から「今日の成長」を描く。 */
+export function renderGrowth(
+  name: string,
+  before: GameStats,
+  after: GameStats,
+  newlyMastered: string[],
+): string {
+  const lines: string[] = ["", "── 今日の成長 ──"];
+  const xpGain = after.xp - before.xp;
+
+  if (xpGain > 0) lines.push(`  XP +${xpGain}`);
+  if (newlyMastered.length > 0)
+    lines.push(`  🆕 習得: ${newlyMastered.join("、")}`);
+  if (after.level > before.level)
+    lines.push(
+      `  ⬆ レベルアップ！ Lv.${before.level} → Lv.${after.level}（${after.stage.name}）`,
+    );
+  if (after.title !== before.title)
+    lines.push(`  🏅 称号「${after.title}」を獲得！`);
+  if (after.streak > 0) lines.push(`  🔥 ${after.streak}日連続`);
+
+  // 変化が XP だけ等で寂しいとき用の一言
+  if (lines.length <= 3 && xpGain <= 0) lines.push(`  こつこつ継続中。`);
+
+  lines.push(`  （詳しくは "status ${name}"）`);
+  return lines.join("\n");
+}

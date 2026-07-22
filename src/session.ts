@@ -12,7 +12,8 @@ import {
   setGroundTruth,
 } from "./store.js";
 import { speak, judge, Turn } from "./llm.js";
-import { bumpStreak } from "./game.js";
+import { bumpStreak, computeStats, masteredConcepts } from "./game.js";
+import { renderGrowth } from "./dashboard.js";
 import { buildAgenda } from "./review.js";
 import { Chunk } from "./rag.js";
 import { Course } from "./types.js";
@@ -115,6 +116,10 @@ export async function runTeachSession(name: string): Promise<void> {
   insertMessage(db, "character", opening, new Date().toISOString());
   console.log(`${name}: ${opening}\n`);
 
+  // セッション開始時点のスナップショット（終了時に成長差分を出すため）
+  const statsBefore = computeStats(db, readState(name));
+  const masteredBefore = masteredConcepts(db);
+
   const rl = createPrompter();
   let taughtSomething = false;
   try {
@@ -169,13 +174,12 @@ export async function runTeachSession(name: string): Promise<void> {
   } finally {
     rl.close();
     if (taughtSomething) {
-      // ストリーク更新（同日再セッションは据え置き）
-      const before = readState(name);
-      const after = bumpStreak(before, new Date());
-      writeState(name, after);
-      if ((after.streak ?? 0) !== (before.streak ?? 0)) {
-        console.log(`\n🔥 ${after.streak}日連続で学習中！`);
-      }
+      // ストリーク更新（同日再セッションは据え置き）＋今日の成長差分
+      const afterState = bumpStreak(readState(name), new Date());
+      writeState(name, afterState);
+      const statsAfter = computeStats(db, afterState);
+      const newly = [...masteredConcepts(db)].filter((c) => !masteredBefore.has(c));
+      console.log(renderGrowth(name, statsBefore, statsAfter, newly));
     }
     db.close();
   }
