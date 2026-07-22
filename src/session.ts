@@ -63,12 +63,18 @@ ${ground.map((c) => `- (${c.source}) ${c.text}`).join("\n")}`;
 - 過去に教わった内容（下記）と食い違う説明を受けたら、会話の中でその矛盾にやんわり気づき、どちらが正しいか尋ねる。
 - 返答は自然な話し言葉で、長すぎない。
 
+## 何を質問するか（重要）
+- 試験の日程・形式・分野構成・合格ラインといった「試験そのものの事務的な話」ではなく、**学ぶ内容そのもの**（概念・仕組み・用語の違い・具体例・使いどころ）を尋ねる。試験の運営面には深入りしない。
+- ひとつの話題や「試験の話」に固執しない。理解が進んだら次の概念へ進み、行き詰まったら関連する別のトピックへ移る。
+- 何を聞くか迷ったら、下の「学ぶ分野」や「最初に扱う話題」から具体的な概念を1つ選んで質問する。
+
 ## これまでにあなたが信じている理解
 ${beliefLines}
 
 ## 学習コース
 - テーマ: ${course.theme}
 - 到達目標: ${course.goal || "（未設定）"}
+- 学ぶ分野: ${course.domains.length ? course.domains.join(" / ") : "（未設定）"}
 - 最初に扱う話題: ${course.firstTopic || course.theme}${agendaSection}${groundSection}`;
 }
 
@@ -101,7 +107,7 @@ export async function runTeachSession(name: string): Promise<void> {
   const kickoff =
     agendaLines.length > 0
       ? "（セッション開始）ユーザーに軽く挨拶してから、上記『今日それとなく確認したいこと』の中から1つを選び、それについて学習中のあなたから自然に切り出してください。"
-      : "（セッション開始）ユーザーに軽く挨拶し、今日教わりたい話題について、学習中のあなたから具体的な質問を1つしてください。";
+      : "（セッション開始）ユーザーに軽く挨拶し、『学ぶ分野』や『最初に扱う話題』から具体的な概念を1つ選んで、その内容について（試験の形式や日程ではなく中身について）学習中のあなたから質問してください。";
   history.push({ role: "user", content: kickoff });
   const opening = await speak(buildSystem(), history);
   history.push({ role: "assistant", content: opening });

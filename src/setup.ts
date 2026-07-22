@@ -14,8 +14,34 @@ import { Course, Settings } from "./types.js";
  * コース定義を生成 → ユーザー確認 → course.json / settings.json に保存する。
  */
 
-function setupSystem(name: string, theme: string): string {
-  return `あなたは「${name}」という、これから「${theme}」を勉強し始めるキャラクターです。学習を一緒に進めてくれるユーザーに、最初の顔合わせとして学習方針をインタビューします。
+/** コースが既に埋まっているか（調整モードにするか）。 */
+export function isPopulated(c: Course): boolean {
+  return !!(c.purpose || c.goal || c.scope || c.domains.length || c.firstTopic);
+}
+
+function setupSystem(
+  name: string,
+  theme: string,
+  editing: boolean,
+  currentSummary?: string,
+): string {
+  const head = `あなたは「${name}」という、「${theme}」を勉強しているキャラクターです。学習を一緒に進めてくれるユーザーと、学習方針を決める（見直す）会話をします。`;
+
+  if (editing) {
+    return `${head}
+
+## いまは「調整」モード
+すでに学習コースが決まっています（下記）。**最初から全部を聞き直さないでください。**
+- まずユーザーに現在の方針を短く要約して見せ、「変えたいところはある？」と尋ねる。
+- ユーザーが挙げた変更点だけを反映し、触れられなかった項目は今の内容をそのまま維持する。
+- 変更が一通り済んだら、更新後の方針を要約して「これでいい？」と確認する（この時 ready=true）。
+- 温かく、簡潔に。長文にしない。
+
+## 現在のコース
+${currentSummary ?? "（不明）"}`;
+  }
+
+  return `${head}最初の顔合わせとして学習方針をインタビューします。
 
 ## やり方
 - フォームの読み上げではなく、自然な会話で聞く。質問は一度に1つだけ。
@@ -69,14 +95,21 @@ function summarize(c: Course, s: Settings): string {
 export async function runSetupSession(name: string): Promise<void> {
   let course = readCourse(name);
   let settings = readSettings(name);
+  const editing = isPopulated(course);
   const history: Turn[] = [];
-  const system = () => setupSystem(name, course.theme);
+  const system = () =>
+    setupSystem(name, course.theme, editing, summarize(course, settings));
 
-  console.log(`\n${name} との初回セットアップを始めます。`);
-  console.log(`（質問に答えてください。中断は /exit）\n`);
+  console.log(
+    editing
+      ? `\n${name} の学習コースを見直します（変えたいところだけ言えばOK）。`
+      : `\n${name} との初回セットアップを始めます。`,
+  );
+  console.log(`（中断は /exit）\n`);
 
-  const kickoff =
-    "（セッション開始）はじめての顔合わせです。ユーザーに挨拶し、まず「何を学びたいか／何のために学ぶか」を、あなたから自然に尋ねてください。";
+  const kickoff = editing
+    ? "（調整セッション開始）ユーザーに挨拶し、現在の学習コースを短く要約して見せてから、「変えたいところはある？」と尋ねてください。最初から全部は聞き直さないこと。"
+    : "（セッション開始）はじめての顔合わせです。ユーザーに挨拶し、まず「何を学びたいか／何のために学ぶか」を、あなたから自然に尋ねてください。";
   history.push({ role: "user", content: kickoff });
   const opening = await speak(system(), history);
   history.push({ role: "assistant", content: opening });
