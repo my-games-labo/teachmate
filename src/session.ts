@@ -10,18 +10,20 @@ import {
   dueAgendaCandidates,
   retrieveGroundTruth,
   setGroundTruth,
+  readPersona,
 } from "./store.js";
 import { speak, judge, Turn } from "./llm.js";
 import { bumpStreak, computeStats, masteredConcepts } from "./game.js";
 import { renderGrowth } from "./dashboard.js";
 import { buildAgenda } from "./review.js";
 import { Chunk } from "./rag.js";
-import { Course } from "./types.js";
+import { Course, Persona, personaPrompt } from "./types.js";
 
 const DEBUG = process.env.TEACHMATE_DEBUG === "1";
 
 function systemPrompt(
   name: string,
+  persona: Persona,
   course: Course,
   beliefs: { domain: string; concept: string; belief: string }[],
   agendaLines: string[],
@@ -57,6 +59,8 @@ ${ground.map((c) => `- (${c.source}) ${c.text}`).join("\n")}`;
 
   return `あなたは「${name}」という名前の学習中のキャラクターです。あなた自身が「${course.theme}」の合格を目指して勉強しています。ユーザーはあなたの先生ではなく、一緒に学ぶ相手として、あなたに知識を教えてくれます。
 
+${personaPrompt(persona)}
+
 ## いまのあなたの様子
 ${moodBlurb}
 この気分が言葉のトーンににじむように振る舞う（無理に元気にしない）。
@@ -88,6 +92,7 @@ ${beliefLines}
 
 export async function runTeachSession(name: string): Promise<void> {
   const course = readCourse(name);
+  const persona = readPersona(name);
   const db = openDb(name);
   const history: Turn[] = [];
 
@@ -106,6 +111,7 @@ export async function runTeachSession(name: string): Promise<void> {
   const buildSystem = (ground: Chunk[] = []) =>
     systemPrompt(
       name,
+      persona,
       course,
       beliefsSnapshot(db),
       agendaLines,

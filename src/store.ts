@@ -11,9 +11,11 @@ import {
   Course,
   Settings,
   State,
+  Persona,
   defaultCourse,
   defaultSettings,
   defaultState,
+  defaultPersona,
 } from "./types.js";
 import { nextSchedule } from "./schedule.js";
 import { AgendaCandidate } from "./review.js";
@@ -46,6 +48,19 @@ export function readState(name: string): State {
 }
 export function writeState(name: string, state: State): void {
   writeJson(characterFile(name, "state.json"), state);
+}
+export function writePersona(name: string, persona: Persona): void {
+  writeJson(characterFile(name, "persona.json"), persona);
+}
+/** 人格を読む。無ければ既定を作って保存（既存キャラにも自動付与）。 */
+export function readPersona(name: string): Persona {
+  const file = characterFile(name, "persona.json");
+  if (!fs.existsSync(file)) {
+    const p = defaultPersona(name);
+    writePersona(name, p);
+    return p;
+  }
+  return readJson<Persona>(file);
 }
 
 // ── knowledge.db（SQLite）──────────────────────────────────────────────
@@ -174,6 +189,7 @@ export function createCharacter(
   writeCourse(name, defaultCourse(theme));
   writeSettings(name, defaultSettings());
   writeState(name, defaultState(nowIso));
+  writePersona(name, defaultPersona(name));
   // DB を初期化して閉じる（スキーマ作成のため）
   openDb(name).close();
 }

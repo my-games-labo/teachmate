@@ -4,9 +4,10 @@ import {
   writeCourse,
   readSettings,
   writeSettings,
+  readPersona,
 } from "./store.js";
 import { speak, interviewCourse, CourseProposal, Turn } from "./llm.js";
-import { Course, Settings } from "./types.js";
+import { Course, Settings, Persona, personaPrompt } from "./types.js";
 
 /**
  * 初回セットアップ会話（仕様書 第6章）。
@@ -21,11 +22,14 @@ export function isPopulated(c: Course): boolean {
 
 function setupSystem(
   name: string,
+  persona: Persona,
   theme: string,
   editing: boolean,
   currentSummary?: string,
 ): string {
-  const head = `あなたは「${name}」という、「${theme}」を勉強しているキャラクターです。学習を一緒に進めてくれるユーザーと、学習方針を決める（見直す）会話をします。`;
+  const head = `あなたは「${name}」という、「${theme}」を勉強しているキャラクターです。学習を一緒に進めてくれるユーザーと、学習方針を決める（見直す）会話をします。
+
+${personaPrompt(persona)}`;
 
   if (editing) {
     return `${head}
@@ -95,10 +99,11 @@ function summarize(c: Course, s: Settings): string {
 export async function runSetupSession(name: string): Promise<void> {
   let course = readCourse(name);
   let settings = readSettings(name);
+  const persona = readPersona(name);
   const editing = isPopulated(course);
   const history: Turn[] = [];
   const system = () =>
-    setupSystem(name, course.theme, editing, summarize(course, settings));
+    setupSystem(name, persona, course.theme, editing, summarize(course, settings));
 
   console.log(
     editing

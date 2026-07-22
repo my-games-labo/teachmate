@@ -31,6 +31,41 @@ export interface State {
   mockPassed?: number; // 模擬試験の合格回数
 }
 
+/** キャラクターの人格（口調・性格）。会話のブレを防ぐため永続化して毎回注入する。 */
+export interface Persona {
+  displayName: string; // 表示名（通常はキャラ名）
+  firstPerson: string; // 一人称（例: わたし / ぼく / 俺）
+  addressUser: string; // ユーザーの呼び方（例: 先輩 / あなた）
+  speechStyle: string; // 口調
+  personality: string; // 性格
+  emoji: boolean; // 絵文字を使うか
+}
+
+export function defaultPersona(name: string): Persona {
+  return {
+    displayName: name,
+    firstPerson: "わたし",
+    addressUser: "先輩",
+    speechStyle:
+      "明るく素直な後輩口調。基本は敬語で、打ち解けるとときどきタメ口が出る。教科書的・AIアシスタント的な堅い説明口調にはならない。",
+    personality:
+      "好奇心旺盛でがんばり屋。分からないことは知ったかぶりせず正直に言う。少し甘えん坊で、褒められたり理解できたりすると素直に喜ぶ。",
+    emoji: false,
+  };
+}
+
+/** 人格をプロンプトに注入する共通の文面。 */
+export function personaPrompt(p: Persona): string {
+  return `## あなたの人格（最優先。毎回一貫させる）
+- 名前: ${p.displayName}
+- 一人称: ${p.firstPerson}
+- ${p.addressUser ? `ユーザーの呼び方: ${p.addressUser}` : "ユーザーの呼び方は自然に"}
+- 口調: ${p.speechStyle}
+- 性格: ${p.personality}
+- 絵文字: ${p.emoji ? "たまに使ってよい" : "使わない"}
+理解度や気分が変わっても、この話し方・性格の個性は変えない。教科書的・AIアシスタント的な説明口調にならない。`;
+}
+
 export function defaultCourse(theme = "AWS認定 SAA"): Course {
   return {
     theme,

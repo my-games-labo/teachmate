@@ -5,12 +5,13 @@ import {
   readSettings,
   readState,
   writeState,
+  readPersona,
   dueAgendaCandidates,
 } from "./store.js";
 import { buildAgenda, AgendaItem } from "./review.js";
 import { sendTelegram } from "./telegram.js";
 import { speak } from "./llm.js";
-import { Course, Settings } from "./types.js";
+import { Course, Settings, Persona, personaPrompt } from "./types.js";
 
 const DAY = 86400_000;
 
@@ -52,12 +53,11 @@ function templateNudge(name: string, agenda: AgendaItem[]): string {
 /** キャラクターの声で催促文を作る（API キーがあれば LLM、無ければテンプレート）。 */
 async function craftNudge(
   name: string,
+  persona: Persona,
   course: Course,
   settings: Settings,
   agenda: AgendaItem[],
 ): Promise<string> {
-  if (!process.env.ANTHROPIC_API_KEY) return templateNudge(name, agenda);
-
   const focus =
     agenda.length === 0
       ? "特に決まった話題はない。しばらく会えていないので、また教えてほしいと軽く誘う。"
@@ -67,6 +67,10 @@ async function craftNudge(
           .join("\n");
 
   const system = `あなたは「${name}」という、${course.theme}を勉強中のキャラクターです。学習を一緒に進めてくれるユーザーに、短い催促メッセージ（プッシュ通知）を送ります。
+
+${personaPrompt(persona)}
+
+## メッセージの作り方
 - ${STRENGTH_TONE[settings.nudgeStrength]}声をかける。
 - 1〜2文、絵文字は使いすぎない。採点や命令口調は禁止。
 - できれば「何のために」を添える（例: 次の模擬問題に進みたい、ここが不安、など）。
@@ -78,6 +82,7 @@ async function craftNudge(
     const text = await speak(system, [{ role: "user", content: instruction }]);
     return text.trim() || templateNudge(name, agenda);
   } catch {
+    // LLM が使えない（キー無し・claude 未ログイン等）ときはテンプレへ
     return templateNudge(name, agenda);
   }
 }
@@ -135,7 +140,13 @@ export async function runNudgeCheck(opts: NudgeOptions = {}): Promise<NudgeResul
       continue;
     }
 
-    const message = await craftNudge(name, readCourse(name), settings, agenda);
+    const message = await craftNudge(
+      name,
+      readPersona(name),
+      readCourse(name),
+      settings,
+      agenda,
+    );
 
     if (opts.dryRun) {
       results.push({ name, status: "dry-run", message });
