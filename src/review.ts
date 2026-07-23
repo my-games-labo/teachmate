@@ -38,7 +38,7 @@ function elapsedDays(from: string | null, nowMs: number): number {
 export function buildAgenda(
   candidates: AgendaCandidate[],
   nowMs: number,
-  maxItems = 3,
+  maxItems = 2,
   rand: () => number = Math.random,
 ): AgendaItem[] {
   const scored: AgendaItem[] = candidates.map((c) => {
@@ -84,5 +84,16 @@ export function buildAgenda(
     return { candidate: c, kind, score, line };
   });
 
-  return scored.sort((a, b) => b.score - a.score).slice(0, maxItems);
+  // 重い項目（矛盾・覚えなおし）は会話中せいぜい1件に絞り、蒸し返しすぎを防ぐ
+  const sorted = scored.sort((a, b) => b.score - a.score);
+  const picked: AgendaItem[] = [];
+  let heavy = 0;
+  for (const it of sorted) {
+    const isHeavy = it.kind === "矛盾" || it.kind === "覚えなおし";
+    if (isHeavy && heavy >= 1) continue;
+    if (isHeavy) heavy++;
+    picked.push(it);
+    if (picked.length >= maxItems) break;
+  }
+  return picked;
 }
