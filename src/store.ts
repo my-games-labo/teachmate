@@ -207,6 +207,27 @@ export function insertMessage(
   ).run(role, content, nowIso);
 }
 
+/** 未解決の open_item（疑問・矛盾）一覧。inspect 用。 */
+export function listOpenItems(
+  db: Database.Database,
+): { kind: string; text: string; concept: string; createdAt: string }[] {
+  return db
+    .prepare(
+      `SELECT o.kind AS kind, o.text AS text, c.name AS concept, o.created_at AS createdAt
+         FROM open_items o JOIN concepts c ON c.id = o.concept_id
+        WHERE o.resolved = 0
+        ORDER BY o.kind, o.created_at DESC`,
+    )
+    .all() as { kind: string; text: string; concept: string; createdAt: string }[];
+}
+
+/** 未解決の矛盾をまとめて解消扱いにする。件数を返す。 */
+export function resolveAllContradictions(db: Database.Database): number {
+  return db
+    .prepare(`UPDATE open_items SET resolved = 1 WHERE kind = 'contradiction' AND resolved = 0`)
+    .run().changes;
+}
+
 /** キャラクターが現在信じている内容の一覧（矛盾検出の文脈として渡す）。 */
 export function beliefsSnapshot(
   db: Database.Database,
@@ -351,10 +372,10 @@ export function recordTeaching(
     if (rec.contradiction)
       upsertOpenItem(db, conceptId, "contradiction", rec.contradiction, nowIso);
 
-    // 十分理解できたら、その概念の未解決の疑問は解消扱いにする
-    if (rec.understanding >= 0.8) {
+    // 自信を持って教え直せたら、その概念の未解決の疑問・矛盾を解消扱いにする
+    if (rec.understanding >= 0.8 && rec.confidence >= 0.6 && !rec.contradiction) {
       db.prepare(
-        `UPDATE open_items SET resolved = 1 WHERE concept_id = ? AND kind = 'question' AND resolved = 0`,
+        `UPDATE open_items SET resolved = 1 WHERE concept_id = ? AND resolved = 0`,
       ).run(conceptId);
     }
     return conceptId;

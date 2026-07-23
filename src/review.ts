@@ -53,7 +53,7 @@ export function buildAgenda(
       c.wrongCount * 1.0 +
       sinceReview * 0.1 +
       (1 - ret) * 2.0; // 忘れているほど優先
-    if (c.contradiction) score += 2.0; // 矛盾は重い
+    if (c.contradiction) score += 1.2; // 矛盾は重め（ただし毎回独占しない程度）
     if (c.question) score += 0.5;
 
     // 条件付きランダム性: スコアに 0.7〜1.3 の揺らぎ

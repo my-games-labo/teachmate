@@ -10,7 +10,7 @@ import {
   countDocChunks,
 } from "./store.js";
 import { listCharacters, characterExists } from "./paths.js";
-import { readState } from "./store.js";
+import { readState, listOpenItems, resolveAllContradictions } from "./store.js";
 import { computeStats } from "./game.js";
 import { renderDashboard, renderPanel } from "./dashboard.js";
 import { chunkText } from "./rag.js";
@@ -36,6 +36,7 @@ function usage(): void {
   teachmate setup <name>                           初回セットアップ会話でコースを決める
   teachmate teach <name>                           キャラクターに教える（会話セッション）
   teachmate status <name>                          成長ダッシュボード（レベル/習熟度/称号）
+  teachmate inspect <name> [--clear-contradictions]  内部状態（未解決の矛盾/疑問）を覗く
   teachmate ingest <name> <path>                   基準知識を取り込む（.md/.txt/.pdf）
   teachmate nudge-check [--dry-run] [--force]      催促を判定して Telegram 送信
   teachmate daemon [--interval 15]                 常駐して定期的に催促を判定（OS非依存）
@@ -350,6 +351,42 @@ function cmdStatus(args: string[]): void {
   }
 }
 
+/** 内部状態（未解決の矛盾・疑問・記憶の内訳）を覗く。--clear-contradictions で矛盾を一括解消。 */
+function cmdInspect(args: string[]): void {
+  requireCharacter(args[0], "inspect");
+  const name = args[0];
+  const { flags } = parseFlags(args.slice(1));
+  const db = openDb(name);
+  try {
+    if (flags["clear-contradictions"] === true) {
+      const n = resolveAllContradictions(db);
+      console.log(`未解決の矛盾 ${n} 件を解消済みにしました。`);
+      return;
+    }
+    const items = listOpenItems(db);
+    const contradictions = items.filter((i) => i.kind === "contradiction");
+    const questions = items.filter((i) => i.kind === "question");
+    const s = computeStats(db, readState(name));
+
+    console.log(`\n[${name}] 内部状態`);
+    console.log(
+      `  頭の中: しっかり${s.memory.solid} / うろ覚え${s.memory.fuzzy} / 忘れかけ${s.memory.fading}   気分: ${s.mood.name}`,
+    );
+    console.log(`\n  未解決の矛盾 (${contradictions.length})`);
+    if (contradictions.length === 0) console.log("    なし");
+    else contradictions.forEach((c) => console.log(`    - [${c.concept}] ${c.text}`));
+    console.log(`\n  未解決の疑問 (${questions.length})`);
+    if (questions.length === 0) console.log("    なし");
+    else questions.forEach((q) => console.log(`    - [${q.concept}] ${q.text}`));
+    console.log(
+      `\n  ヒント: 該当概念を自信を持って教え直すと自動で解消されます。` +
+        `\n  まとめて消すなら: teachmate inspect ${name} --clear-contradictions\n`,
+    );
+  } finally {
+    db.close();
+  }
+}
+
 async function main(): Promise<void> {
   loadEnv();
   const [cmd, ...rest] = process.argv.slice(2);
@@ -368,6 +405,9 @@ async function main(): Promise<void> {
       break;
     case "status":
       cmdStatus(rest);
+      break;
+    case "inspect":
+      cmdInspect(rest);
       break;
     case "ingest":
       await cmdIngest(rest);
