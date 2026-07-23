@@ -67,17 +67,18 @@ export function buildAgenda(
           ? "復習"
           : "確認";
 
+    // 文言は「意図」を示す内部メモ。キャラは自分の言葉で言い換える（決まり文句にしない）。
     let line: string;
     if (kind === "矛盾") {
-      line = `[矛盾] ${c.concept}（${c.domain}）: 以前の説明と食い違う気がする。やんわり尋ねて確かめたい。手がかり: ${c.contradiction}`;
+      line = `[矛盾] ${c.concept}（${c.domain}）: 以前の説明と食い違う気がして、もやもやしている。手がかり: ${c.contradiction}`;
     } else if (kind === "覚えなおし") {
-      line = `[覚えなおし] ${c.concept}（${c.domain}）: 前に教わったのに、うろ覚えで思い出せない。正直に「忘れちゃった」と言って、もう一度教えてほしいと頼む`;
+      line = `[覚えなおし] ${c.concept}（${c.domain}）: 前に教わったのに思い出せない。正直に忘れたと打ち明け、もう一度教わりたい`;
     } else if (kind === "復習") {
-      line = `[復習] ${c.concept}（${c.domain}）: まだ自信がない。具体例や言い換えで確認したい${
+      line = `[復習] ${c.concept}（${c.domain}）: まだあやふや。いつもと違う角度（具体例・言い換え・自分の理解をぶつける等）で持ち出す${
         c.question ? `（引っかかっている点: ${c.question}）` : ""
       }`;
     } else {
-      line = `[確認] ${c.concept}（${c.domain}）: 覚えているか軽く確認したい`;
+      line = `[確認] ${c.concept}（${c.domain}）: 覚えているか、話の流れで自然に触れる`;
     }
 
     return { candidate: c, kind, score, line };
