@@ -5,6 +5,7 @@ import {
   readState,
   writeState,
   insertMessage,
+  appendConversationLog,
   beliefsSnapshot,
   recordTeaching,
   dueAgendaCandidates,
@@ -18,8 +19,6 @@ import { renderGrowth, renderDashboard, renderPanel } from "./dashboard.js";
 import { buildAgenda } from "./review.js";
 import { Chunk } from "./rag.js";
 import { Course, Persona, personaPrompt } from "./types.js";
-
-const DEBUG = process.env.TEACHMATE_DEBUG === "1";
 
 function systemPrompt(
   name: string,
@@ -146,7 +145,9 @@ export async function runTeachSession(name: string): Promise<void> {
   history.push({ role: "user", content: kickoff });
   const opening = await speak(buildSystem(), history);
   history.push({ role: "assistant", content: opening });
-  insertMessage(db, "character", opening, new Date().toISOString());
+  const openIso = new Date().toISOString();
+  insertMessage(db, "character", opening, openIso);
+  appendConversationLog(name, name, opening, openIso);
   say(`${name}: ${opening}`);
 
   const rl = createPrompter();
@@ -175,6 +176,7 @@ export async function runTeachSession(name: string): Promise<void> {
       const now = new Date().toISOString();
       history.push({ role: "user", content: input });
       insertMessage(db, "user", input, now);
+      appendConversationLog(name, "あなた", input, now);
       taughtSomething = true;
       say(`あなた: ${input}`);
 
@@ -204,18 +206,10 @@ export async function runTeachSession(name: string): Promise<void> {
         setGroundTruth(db, conceptId, ground[0].text, ground[0].source, now);
       }
       insertMessage(db, "character", j.reply, now);
+      appendConversationLog(name, name, j.reply, now);
       history.push({ role: "assistant", content: j.reply });
 
       say(`${name}: ${j.reply}`);
-      if (DEBUG) {
-        say(
-          `  [debug] 概念=${j.concept}/${j.domain} 理解=${j.understanding.toFixed(
-            2,
-          )} 確信=${j.confidence.toFixed(2)} 参照=${ground.length}件` +
-            (j.openQuestion ? ` 疑問=${j.openQuestion}` : "") +
-            (j.contradiction ? ` 矛盾=${j.contradiction}` : ""),
-        );
-      }
     }
   } finally {
     rl.close();

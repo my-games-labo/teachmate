@@ -10,7 +10,12 @@ import {
   countDocChunks,
 } from "./store.js";
 import { listCharacters, characterExists } from "./paths.js";
-import { readState, listOpenItems, resolveAllContradictions } from "./store.js";
+import {
+  readState,
+  listOpenItems,
+  resolveAllContradictions,
+  readConversationTail,
+} from "./store.js";
 import { computeStats } from "./game.js";
 import { renderDashboard, renderPanel } from "./dashboard.js";
 import { chunkText } from "./rag.js";
@@ -37,6 +42,7 @@ function usage(): void {
   teachmate teach <name>                           キャラクターに教える（会話セッション）
   teachmate status <name>                          成長ダッシュボード（レベル/習熟度/称号）
   teachmate inspect <name> [--clear-contradictions]  内部状態（未解決の矛盾/疑問）を覗く
+  teachmate log <name> [--lines 40]                会話ログ（conversation.log）を表示
   teachmate ingest <name> <path>                   基準知識を取り込む（.md/.txt/.pdf）
   teachmate nudge-check [--dry-run] [--force]      催促を判定して Telegram 送信
   teachmate daemon [--interval 15]                 常駐して定期的に催促を判定（OS非依存）
@@ -51,7 +57,6 @@ function usage(): void {
   TELEGRAM_BOT_TOKEN   Telegram ボットのトークン（催促送信に必須）
   TEACHMATE_MODEL      使用モデル（既定 claude-sonnet-4-6）
   TEACHMATE_HOME       データ配置（既定 ~/.teachmate）
-  TEACHMATE_DEBUG=1    理解判定の内部値を表示
   TEACHMATE_MOCK=1     オフライン・デモ用のモック応答（API キー不要）
 `);
 }
@@ -351,6 +356,20 @@ function cmdStatus(args: string[]): void {
   }
 }
 
+/** 会話ログ（conversation.log）の末尾を表示。 */
+function cmdLog(args: string[]): void {
+  requireCharacter(args[0], "log");
+  const name = args[0];
+  const { flags } = parseFlags(args.slice(1));
+  const n = Math.max(1, Number(flags.lines) || 40);
+  const lines = readConversationTail(name, n);
+  if (lines.length === 0) {
+    console.log("まだ会話ログがありません。teach で話すと記録されます。");
+    return;
+  }
+  console.log(lines.join("\n"));
+}
+
 /** 内部状態（未解決の矛盾・疑問・記憶の内訳）を覗く。--clear-contradictions で矛盾を一括解消。 */
 function cmdInspect(args: string[]): void {
   requireCharacter(args[0], "inspect");
@@ -408,6 +427,9 @@ async function main(): Promise<void> {
       break;
     case "inspect":
       cmdInspect(rest);
+      break;
+    case "log":
+      cmdLog(rest);
       break;
     case "ingest":
       await cmdIngest(rest);

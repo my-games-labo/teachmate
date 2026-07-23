@@ -207,6 +207,32 @@ export function insertMessage(
   ).run(role, content, nowIso);
 }
 
+/** 会話を人が読めるプレーンテキストログに常時追記する。 */
+export function appendConversationLog(
+  name: string,
+  label: string,
+  text: string,
+  nowIso: string,
+): void {
+  const t = nowIso.slice(0, 19).replace("T", " ");
+  fs.appendFileSync(
+    characterFile(name, "conversation.log"),
+    `[${t}] ${label}: ${text}\n`,
+    "utf8",
+  );
+}
+
+/** 会話ログの末尾 n 行を返す。 */
+export function readConversationTail(name: string, n: number): string[] {
+  const file = characterFile(name, "conversation.log");
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-n);
+}
+
 /** 未解決の open_item（疑問・矛盾）一覧。inspect 用。 */
 export function listOpenItems(
   db: Database.Database,
