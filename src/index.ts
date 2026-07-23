@@ -9,7 +9,7 @@ import {
   replaceDocChunks,
   countDocChunks,
 } from "./store.js";
-import { listCharacters, characterExists, repoRoot, baseDir } from "./paths.js";
+import { listCharacters, characterExists } from "./paths.js";
 import { readState } from "./store.js";
 import { computeStats } from "./game.js";
 import { renderDashboard } from "./dashboard.js";
@@ -22,7 +22,6 @@ import { getTelegramChats, sendTelegram } from "./telegram.js";
 import { loadEnv } from "./env.js";
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -39,12 +38,10 @@ function usage(): void {
   teachmate status <name>                          成長ダッシュボード（レベル/習熟度/称号）
   teachmate ingest <name> <path>                   基準知識を取り込む（.md/.txt/.pdf）
   teachmate nudge-check [--dry-run] [--force]      催促を判定して Telegram 送信
+  teachmate daemon [--interval 15]                 常駐して定期的に催促を判定（OS非依存）
   teachmate telegram whoami                        ボットに話しかけた chat_id を確認
   teachmate telegram <name> <chatId>               送信先 chat_id を設定
   teachmate telegram <name> test                   テスト送信
-  teachmate schedule install [--time HH:MM] [--print]   日次催促をタスクスケジューラに登録
-  teachmate schedule uninstall                     登録を解除
-  teachmate schedule status                        登録状況を表示
   teachmate help                                   このヘルプ
 
 環境変数（~/.teachmate/.env または カレントの .env でも可）:
@@ -130,6 +127,31 @@ async function cmdNudgeCheck(args: string[]): Promise<void> {
   }
 }
 
+/** OS 非依存の常駐デーモン。一定間隔で催促を判定し、送るべきものを送る。 */
+async function cmdDaemon(args: string[]): Promise<void> {
+  const { flags } = parseFlags(args);
+  const intervalMin = Math.max(1, Number(flags.interval) || 15);
+  const stamp = () => new Date().toLocaleString();
+  console.log(
+    `teachmate daemon 起動: ${intervalMin}分ごとに催促を判定します（Ctrl+C で停止）`,
+  );
+
+  const tick = async () => {
+    try {
+      const results = await runNudgeCheck();
+      const sent = results.filter((r) => r.status === "sent");
+      for (const r of sent) console.log(`[${stamp()}] 送信 → ${r.name}: ${r.message}`);
+      if (sent.length === 0) console.log(`[${stamp()}] チェック完了（送信なし）`);
+    } catch (e) {
+      console.error(`[${stamp()}] daemon エラー: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  await tick();
+  setInterval(tick, intervalMin * 60_000);
+  await new Promise<void>(() => {}); // 常駐（Ctrl+C まで）
+}
+
 async function cmdTelegram(args: string[]): Promise<void> {
   const [a, b] = args;
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -180,63 +202,6 @@ async function cmdTelegram(args: string[]): Promise<void> {
   console.log(`${name} の送信先 chat_id を ${chatId} に設定しました。`);
 }
 
-const TASK_NAME = "teachmate-nudge";
-
-function cmdSchedule(args: string[]): void {
-  const [sub] = args;
-  const { flags } = parseFlags(args.slice(1));
-
-  if (process.platform !== "win32" && sub !== "status") {
-    console.log(
-      "Windows 以外です。cron 等で以下を日次実行してください:\n" +
-        `  cd "${repoRoot()}" && node dist/index.js nudge-check`,
-    );
-    return;
-  }
-
-  if (sub === "install") {
-    const time = typeof flags.time === "string" ? flags.time : "20:00";
-    const root = repoRoot();
-    const entry = path.join(root, "dist", "index.js");
-    const logPath = path.join(baseDir(), "nudge.log");
-    const tr = `cmd /c cd /d "${root}" && node "${entry}" nudge-check >> "${logPath}" 2>&1`;
-    const taskArgs = ["/Create", "/TN", TASK_NAME, "/SC", "DAILY", "/ST", time, "/TR", tr, "/F"];
-
-    if (flags.print === true) {
-      console.log("schtasks " + taskArgs.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" "));
-      return;
-    }
-    if (!fs.existsSync(entry)) {
-      console.error(`エラー: ${entry} がありません。先に \`npm run build\` を実行してください。`);
-      process.exit(1);
-    }
-    const res = spawnSync("schtasks", taskArgs, { encoding: "utf8" });
-    if (res.status === 0) {
-      console.log(`タスク "${TASK_NAME}" を毎日 ${time} に登録しました。`);
-      console.log(`ログ: ${logPath}`);
-      console.log("※ API キー/トークンは ~/.teachmate/.env に置くとスケジューラ起動時も読み込まれます。");
-    } else {
-      console.error("登録に失敗しました:\n" + (res.stderr || res.stdout || res.error?.message));
-      process.exit(1);
-    }
-    return;
-  }
-
-  if (sub === "uninstall") {
-    const res = spawnSync("schtasks", ["/Delete", "/TN", TASK_NAME, "/F"], { encoding: "utf8" });
-    console.log(res.status === 0 ? `タスク "${TASK_NAME}" を解除しました。` : (res.stderr || res.stdout));
-    return;
-  }
-
-  if (sub === "status") {
-    const res = spawnSync("schtasks", ["/Query", "/TN", TASK_NAME], { encoding: "utf8" });
-    console.log(res.status === 0 ? res.stdout : `タスク "${TASK_NAME}" は登録されていません。`);
-    return;
-  }
-
-  console.error("使い方: teachmate schedule <install|uninstall|status> [--time HH:MM] [--print]");
-  process.exit(1);
-}
 
 const INGEST_EXT = /\.(md|markdown|txt|pdf)$/i;
 
@@ -351,11 +316,11 @@ async function main(): Promise<void> {
     case "nudge-check":
       await cmdNudgeCheck(rest);
       break;
+    case "daemon":
+      await cmdDaemon(rest);
+      break;
     case "telegram":
       await cmdTelegram(rest);
-      break;
-    case "schedule":
-      cmdSchedule(rest);
       break;
     case undefined:
     case "help":

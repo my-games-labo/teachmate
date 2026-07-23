@@ -12,7 +12,7 @@ MVP をステップ順に構築中。
 - [x] Step2: 会話ループ最小版（教える→理解判定→knowledge.db 更新）
 - [x] Step3: 記憶の再登場（`next_review_at` による復習/矛盾）
 - [x] Step4: RAG 接続（AWS 公式ドキュメント）
-- [x] Step5: Telegram 送信＋タスクスケジューラ
+- [x] Step5: Telegram 送信＋常駐デーモン（OS 非依存）
 - [x] 拡張: PDF 取り込み（whitepaper/BlackBelt 用、unpdf）
 - [x] 拡張: 初回セットアップ会話（第6章）
 - [x] 拡張: 成長ダッシュボード（`status`）— レベル/分野別習熟度/ストリーク/称号
@@ -78,14 +78,16 @@ node dist/index.js list
    node dist/index.js telegram taro <chatId>   # 送信先を設定
    node dist/index.js telegram taro test        # テスト送信
    ```
-5. 日次催促をタスクスケジューラに登録（Windows）：
+5. 常駐デーモンで自動送信（OS 非依存）：
    ```bash
-   node dist/index.js schedule install --time 20:00
-   node dist/index.js schedule status
-   node dist/index.js schedule uninstall
+   node dist/index.js daemon                 # 一定間隔で催促を判定・送信（Ctrl+C で停止）
+   node dist/index.js daemon --interval 30   # チェック間隔（分）を変更
    ```
+   バックグラウンド常駐にしたいときは `nohup node dist/index.js daemon &` や tmux/screen で。
+   単発で判定・確認するなら `node dist/index.js nudge-check --dry-run --force`。
 
-`.env` に鍵を置くと、スケジューラから起動される `nudge-check` でも読み込まれます。
+送るタイミング・文面は各キャラの `settings.json`（`notifyDays` / `notifyHour` / `quietHours` /
+`nudgeStrength`）で決まる。`.env` の鍵はデーモン起動時にも読み込まれます。
 
 ## データ配置
 

@@ -111,6 +111,10 @@ export async function runNudgeCheck(opts: NudgeOptions = {}): Promise<NudgeResul
         results.push({ name, status: "skipped", reason: "通知曜日ではない" });
         continue;
       }
+      if (now.getHours() < settings.notifyHour) {
+        results.push({ name, status: "skipped", reason: "通知時刻前" });
+        continue;
+      }
       if (inQuietHours(now.getHours(), settings.quietHours)) {
         results.push({ name, status: "skipped", reason: "quiet hours" });
         continue;

@@ -41,18 +41,6 @@ export function characterExists(name: string): boolean {
   return fs.existsSync(characterDir(name));
 }
 
-/** package.json を持つディレクトリ（リポジトリ/インストール先ルート）を探す。 */
-export function repoRoot(): string {
-  let dir = import.meta.dirname; // 実行時は .../src か .../dist
-  for (let i = 0; i < 6; i++) {
-    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return process.cwd();
-}
-
 export function listCharacters(): string[] {
   const dir = charactersDir();
   if (!fs.existsSync(dir)) return [];
