@@ -83,7 +83,8 @@ node dist/index.js list
    node dist/index.js daemon                 # 一定間隔で催促を判定・送信（Ctrl+C で停止）
    node dist/index.js daemon --interval 30   # チェック間隔（分）を変更
    ```
-   バックグラウンド常駐にしたいときは `nohup node dist/index.js daemon &` や tmux/screen で。
+   前景（ターミナル）で動かすとキャラの状態＋次チェックまでのカウントダウンを描画。
+   バックグラウンド常駐（`nohup node dist/index.js daemon &` や tmux/screen）ではログ行のみ。
    単発で判定・確認するなら `node dist/index.js nudge-check --dry-run --force`。
 
 送るタイミング・文面は各キャラの `settings.json`（`notifyDays` / `notifyHour` / `quietHours` /

@@ -12,7 +12,7 @@ import {
 import { listCharacters, characterExists } from "./paths.js";
 import { readState } from "./store.js";
 import { computeStats } from "./game.js";
-import { renderDashboard } from "./dashboard.js";
+import { renderDashboard, renderPanel } from "./dashboard.js";
 import { chunkText } from "./rag.js";
 import { extractPdfText } from "./pdf.js";
 import { runTeachSession } from "./session.js";
@@ -131,25 +131,84 @@ async function cmdNudgeCheck(args: string[]): Promise<void> {
 async function cmdDaemon(args: string[]): Promise<void> {
   const { flags } = parseFlags(args);
   const intervalMin = Math.max(1, Number(flags.interval) || 15);
-  const stamp = () => new Date().toLocaleString();
-  console.log(
-    `teachmate daemon 起動: ${intervalMin}分ごとに催促を判定します（Ctrl+C で停止）`,
-  );
+  const intervalMs = intervalMin * 60_000;
+  const hhmmss = (d: Date) => d.toTimeString().slice(0, 8);
+  const sent: { time: string; name: string; message: string }[] = [];
 
-  const tick = async () => {
+  const doCheck = async (): Promise<string> => {
     try {
       const results = await runNudgeCheck();
-      const sent = results.filter((r) => r.status === "sent");
-      for (const r of sent) console.log(`[${stamp()}] 送信 → ${r.name}: ${r.message}`);
-      if (sent.length === 0) console.log(`[${stamp()}] チェック完了（送信なし）`);
+      for (const r of results.filter((r) => r.status === "sent")) {
+        sent.unshift({ time: hhmmss(new Date()), name: r.name, message: r.message ?? "" });
+      }
+      return `送信 ${results.filter((r) => r.status === "sent").length} 件 / 判定 ${results.length} 件`;
     } catch (e) {
-      console.error(`[${stamp()}] daemon エラー: ${e instanceof Error ? e.message : e}`);
+      return `エラー: ${e instanceof Error ? e.message : e}`;
     }
   };
 
-  await tick();
-  setInterval(tick, intervalMin * 60_000);
-  await new Promise<void>(() => {}); // 常駐（Ctrl+C まで）
+  // 背景（非TTY）: 素朴なログ行
+  if (process.stdout.isTTY !== true) {
+    console.log(`teachmate daemon 起動: ${intervalMin}分ごとに判定（Ctrl+C で停止）`);
+    const tick = async () =>
+      console.log(`[${new Date().toLocaleString()}] ${await doCheck()}`);
+    await tick();
+    setInterval(tick, intervalMs);
+    await new Promise<void>(() => {});
+    return;
+  }
+
+  // 前景（TTY）: キャラの状態＋次チェックまでを描画
+  let nextCheckMs = Date.now();
+  let checking = false;
+  let lastResult = "起動しました";
+
+  const panels = (): string => {
+    const names = listCharacters();
+    if (names.length === 0) return "  キャラクターがいません。";
+    return names
+      .map((name) => {
+        const db = openDb(name);
+        try {
+          return renderPanel(name, computeStats(db, readState(name)));
+        } finally {
+          db.close();
+        }
+      })
+      .join("\n\n");
+  };
+
+  const draw = () => {
+    const remain = Math.max(0, nextCheckMs - Date.now());
+    const mm = String(Math.floor(remain / 60000)).padStart(2, "0");
+    const ss = String(Math.floor((remain % 60000) / 1000)).padStart(2, "0");
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+    console.log(`teachmate daemon   ${new Date().toLocaleString()}   （Ctrl+C で停止）`);
+    console.log(
+      checking
+        ? `  判定中…`
+        : `  次のチェックまで ${mm}:${ss}   （${intervalMin}分間隔）   前回: ${lastResult}`,
+    );
+    console.log("");
+    console.log(panels());
+    console.log("");
+    console.log("  最近の催促送信:");
+    if (sent.length === 0) console.log("    （まだありません）");
+    else for (const s of sent.slice(0, 5)) console.log(`    [${s.time}] ${s.name}: ${s.message}`);
+  };
+
+  draw();
+  setInterval(async () => {
+    if (!checking && Date.now() >= nextCheckMs) {
+      checking = true;
+      draw();
+      lastResult = await doCheck();
+      nextCheckMs = Date.now() + intervalMs;
+      checking = false;
+    }
+    draw();
+  }, 1000);
+  await new Promise<void>(() => {});
 }
 
 async function cmdTelegram(args: string[]): Promise<void> {
