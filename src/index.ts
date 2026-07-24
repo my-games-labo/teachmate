@@ -45,7 +45,7 @@ function usage(): void {
   teachmate log <name> [--lines 40]                会話ログ（conversation.log）を表示
   teachmate ingest <name> <path>                   基準知識を取り込む（.md/.txt/.pdf）
   teachmate nudge-check [--dry-run] [--force]      催促を判定して Telegram 送信
-  teachmate daemon [--interval 15]                 常駐して定期的に催促を判定（OS非依存）
+  teachmate daemon [--interval 1]                  常駐して定期的に催促を判定（OS非依存, 既定1分）
   teachmate telegram whoami                        ボットに話しかけた chat_id を確認
   teachmate telegram <name> <chatId>               送信先 chat_id を設定
   teachmate telegram <name> test                   テスト送信
@@ -136,7 +136,7 @@ async function cmdNudgeCheck(args: string[]): Promise<void> {
 /** OS 非依存の常駐デーモン。一定間隔で催促を判定し、送るべきものを送る。 */
 async function cmdDaemon(args: string[]): Promise<void> {
   const { flags } = parseFlags(args);
-  const intervalMin = Math.max(1, Number(flags.interval) || 15);
+  const intervalMin = Math.max(1, Number(flags.interval) || 1);
   const intervalMs = intervalMin * 60_000;
   const hhmmss = (d: Date) => d.toTimeString().slice(0, 8);
   const sent: { time: string; name: string; message: string }[] = [];

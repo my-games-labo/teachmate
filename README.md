@@ -80,7 +80,7 @@ node dist/index.js list
    ```
 5. 常駐デーモンで自動送信（OS 非依存）：
    ```bash
-   node dist/index.js daemon                 # 一定間隔で催促を判定・送信（Ctrl+C で停止）
+   node dist/index.js daemon                 # 一定間隔で催促を判定・送信（既定1分, Ctrl+C で停止）
    node dist/index.js daemon --interval 30   # チェック間隔（分）を変更
    ```
    前景（ターミナル）で動かすとキャラの状態＋次チェックまでのカウントダウンを描画。
