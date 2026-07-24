@@ -4,7 +4,7 @@
  * 重み付けし、条件付きのランダム性を加えて数件だけ選ぶ。
  * 「毎回すぐ全部指摘する」のではなく、重要なものを優先しつつ揺らぎを持たせる。
  */
-import { understandingRetention } from "./game.js";
+import { understandingRetention, normalizeDomain } from "./game.js";
 
 export interface AgendaCandidate {
   conceptId: number;
@@ -61,7 +61,7 @@ export function buildAgenda(
 
     const kind: AgendaItem["kind"] = c.contradiction
       ? "矛盾"
-      : ret < 0.5
+      : ret < 0.4
         ? "覚えなおし"
         : c.understanding < 0.5 || c.confidence < 0.5 || c.wrongCount > 0
           ? "復習"
@@ -84,13 +84,17 @@ export function buildAgenda(
     return { candidate: c, kind, score, line };
   });
 
-  // 重い項目（矛盾・覚えなおし）は会話中せいぜい1件に絞り、蒸し返しすぎを防ぐ
+  // 重い項目(矛盾/覚えなおし)は会話中1件まで。かつ同じ分野に偏らないよう分散。
   const sorted = scored.sort((a, b) => b.score - a.score);
   const picked: AgendaItem[] = [];
+  const domainsUsed = new Set<string>();
   let heavy = 0;
   for (const it of sorted) {
     const isHeavy = it.kind === "矛盾" || it.kind === "覚えなおし";
     if (isHeavy && heavy >= 1) continue;
+    const dom = normalizeDomain(it.candidate.domain);
+    if (domainsUsed.has(dom)) continue; // 近い概念の堂々巡りを避ける
+    domainsUsed.add(dom);
     if (isHeavy) heavy++;
     picked.push(it);
     if (picked.length >= maxItems) break;

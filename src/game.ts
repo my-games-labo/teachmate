@@ -83,11 +83,18 @@ function levelForXp(xp: number): number {
 
 // ── 忘却曲線（compute-on-read の減衰）──────────────────────────────
 // 保存値は書き換えず、読むときに「経過時間」で減衰させて“いま覚えている度合い”を出す。
-// 安定度 S は間隔反復の interval_days（=よく反復したほど大きい）から作る。
-const RETAIN_FLOOR = 0.2; // 理解は完全には消えない（残る下限）
+// ゲーム層（status/催促/気分）の裏方。会話をバカっぽくしないよう、減衰は控えめにする。
+const RETAIN_FLOOR = 0.35; // 理解は簡単には消えない（残る下限）
+const STAB_BASE_DAYS = 10; // 一度教えただけでも約2週間は大きく崩れない
+const STAB_MULT = 3; // 反復するほど（interval が伸びるほど）忘れにくくなる
 
-function retention(elapsedDays: number, stabilityDays: number): number {
-  return Math.exp(-Math.max(0, elapsedDays) / Math.max(0.5, stabilityDays));
+/** 記憶の安定度（日）。よく反復したほど大きい。 */
+function stabilityDays(intervalDays: number): number {
+  return Math.max(STAB_BASE_DAYS, intervalDays * STAB_MULT);
+}
+
+function retention(elapsedDays: number, stability: number): number {
+  return Math.exp(-Math.max(0, elapsedDays) / Math.max(0.5, stability));
 }
 
 /** 理解の保持率 0..1（1=よく覚えている, 低い=忘れかけ）。アジェンダの覚えなおし判定に使う。 */
@@ -98,22 +105,17 @@ export function understandingRetention(
 ): number {
   if (!lastReviewedAt) return 1;
   const elapsedDays = (nowMs - Date.parse(lastReviewedAt)) / 86400_000;
-  return retention(elapsedDays, Math.max(1, intervalDays) * 2);
+  return retention(elapsedDays, stabilityDays(intervalDays));
 }
 
-/** 理解度は緩やかに（下限あり）、確信度は速く減衰させる。 */
+/** 理解度を経過時間で緩やかに減衰させる（下限あり）。 */
 function decay(
   understanding: number,
-  confidence: number,
   intervalDays: number,
   elapsedDays: number,
-): { u: number; c: number } {
-  const rU = retention(elapsedDays, Math.max(1, intervalDays) * 2);
-  const rC = retention(elapsedDays, Math.max(0.5, intervalDays));
-  return {
-    u: understanding * (RETAIN_FLOOR + (1 - RETAIN_FLOOR) * rU),
-    c: confidence * rC,
-  };
+): number {
+  const rU = retention(elapsedDays, stabilityDays(intervalDays));
+  return understanding * (RETAIN_FLOOR + (1 - RETAIN_FLOOR) * rU);
 }
 
 function moodOf(
@@ -123,9 +125,10 @@ function moodOf(
 ): Mood {
   if (total === 0)
     return { name: "まっさら", face: "(・ω・)", blurb: "まだ何も教わっていない。まっさらな状態。" };
-  if (contradictions > 0)
-    return { name: "こんがらがり", face: "(@_@)", blurb: "教わった内容の食い違いで頭がこんがらがっている。" };
   const f = (n: number) => n / total;
+  // 矛盾は「割合が目立つとき」だけ気分を支配する（少数なら気にしすぎない）
+  if (contradictions / total >= 0.15)
+    return { name: "こんがらがり", face: "(@_@)", blurb: "教わった内容の食い違いが多くて、頭がこんがらがっている。" };
   if (f(memory.fading) >= 0.4)
     return { name: "そわそわ", face: "(・_・;)", blurb: "だいぶ忘れかけていて、そわそわしている。" };
   if (f(memory.fuzzy) >= 0.4)
@@ -175,7 +178,7 @@ export function computeStats(
     const elapsedDays = r.last_reviewed_at
       ? (nowMs - Date.parse(r.last_reviewed_at)) / 86400_000
       : 0;
-    return decay(r.understanding, r.confidence, r.interval_days, elapsedDays).u;
+    return decay(r.understanding, r.interval_days, elapsedDays);
   });
 
   // 分野別習熟度（減衰後）。「大分野（小分野）」は括弧以降を落として束ねる。
